@@ -1,0 +1,46 @@
+import Foundation
+import SwiftSoup
+
+enum ElementMath {
+    static func standardize(_ html: String) -> String {
+        guard let document = try? SwiftSoup.parse(html), let body = document.body() else { return html }
+        var replacements: [(String, String)] = []
+        for selector in ["mjx-container", "span.MathJax", "span.katex"] {
+            for element in (try? body.select(selector)) ?? SwiftSoup.Elements() {
+                guard let latex = extractLatex(element), let original = try? element.outerHtml() else { continue }
+                let className = ((try? element.attr("class")) ?? "").lowercased()
+                let displayValue = ((try? element.attr("display")) ?? "").lowercased()
+                let id = ((try? element.attr("id")) ?? "").lowercased()
+                let display = displayValue == "block" || className.contains("display") || id.contains("display") ? "block" : "inline"
+                replacements.append((original, "<math data-latex=\"\(escape(latex))\" display=\"\(display)\"></math>"))
+            }
+        }
+        var result = html
+        for (original, replacement) in replacements where !original.isEmpty {
+            if let range = result.range(of: original) { result.replaceSubrange(range, with: replacement) }
+        }
+        return result
+    }
+
+    static func standardizeMath(_ html: String) -> String { standardize(html) }
+
+    private static func extractLatex(_ element: Element) -> String? {
+        for attribute in ["data-latex", "alt"] {
+            let value = (try? element.attr(attribute)) ?? ""
+            if !value.isEmpty { return value }
+        }
+        if let annotation = try? element.select("annotation[encoding=\"application/x-tex\"]").first() {
+            let value = DOMUtils.textContent(annotation).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { return value }
+        }
+        if let script = try? element.select("script[type=\"math/tex\"]").first() {
+            let value = DOMUtils.textContent(script).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { return value }
+        }
+        return nil
+    }
+
+    private static func escape(_ value: String) -> String {
+        value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+    }
+}
