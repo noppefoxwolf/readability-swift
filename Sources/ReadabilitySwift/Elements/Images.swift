@@ -1,12 +1,15 @@
 enum ElementImages {
+    private struct AttributeValue {
+        let value: String
+        let range: Range<String.Index>
+    }
+
     static func standardize(_ html: String) -> String {
         // Keep this as a source-text rewrite like readabilityrs. Parsing and
         // reserializing an img through SwiftSoup can change quote style,
         // attribute order, and void-tag spelling before the Markdown pipeline.
-        let pattern = "(?is)<img\\b[^>]*>"
-        return SwiftRegex.replacingMatches(in: html, pattern: pattern) { captures in
-            guard let original = captures.first.flatMap({ $0 }) else { return nil }
-            return standardizeTag(String(original))
+        html.replacing(#/(?is)<img\b[^>]*>/#) { match in
+            standardizeTag(String(match.0)) ?? String(match.0)
         }
     }
 
@@ -49,20 +52,50 @@ enum ElementImages {
 
     private static func isPlaceholder(_ source: String) -> Bool {
         if source.contains("placeholder") || source.contains("blank.gif") || source.contains("spacer.gif") { return true }
-        return SwiftRegex.contains(source, pattern: "^data:image/(gif|png|jpeg|svg);base64,[A-Za-z0-9+/=]{0,200}$", caseInsensitive: true)
+        return source.wholeMatch(of: #/(?i)data:image/(?:gif|png|jpeg|svg);base64,[A-Za-z0-9+/=]{0,200}/#) != nil
     }
 
     private static func attribute(_ name: String, in tag: String) -> String? {
-        let pattern = "(?i)(?:^|\\s)\(name)=([\"'])(.*?)\\1"
-        guard let captures = SwiftRegex.captures(in: tag, pattern: pattern),
-              captures.indices.contains(2), let value = captures[2] else { return nil }
-        return String(value)
+        attributeValue(name, in: tag)?.value
     }
 
     private static func replaceAttribute(_ name: String, old: String, new: String, in tag: String) -> String {
-        guard !old.isEmpty else { return tag }
-        let pattern = "(\\s\(name)=)([\"'])" + SwiftRegex.escaped(old) + "([\"'])"
-        return SwiftRegex.replacing(in: tag, pattern: pattern, with: "$1$2\(escape(new))$3", caseInsensitive: true)
+        guard !old.isEmpty,
+              let attribute = attributeValue(name, in: tag),
+              attribute.value == old else { return tag }
+        var result = tag
+        result.replaceSubrange(attribute.range, with: escape(new))
+        return result
+    }
+
+    private static func attributeValue(_ name: String, in tag: String) -> AttributeValue? {
+        var searchStart = tag.startIndex
+        while let nameRange = tag.firstRange(
+            of: name,
+            caseInsensitive: true,
+            in: searchStart..<tag.endIndex
+        ) {
+            let hasAttributeBoundary = nameRange.lowerBound == tag.startIndex
+                || tag[tag.index(before: nameRange.lowerBound)].isWhitespace
+            let equals = nameRange.upperBound
+            guard hasAttributeBoundary,
+                  equals < tag.endIndex,
+                  tag[equals] == "=" else {
+                searchStart = tag.index(after: nameRange.lowerBound)
+                continue
+            }
+            let quoteIndex = tag.index(after: equals)
+            guard quoteIndex < tag.endIndex,
+                  tag[quoteIndex] == "\"" || tag[quoteIndex] == "'" else {
+                searchStart = tag.index(after: nameRange.lowerBound)
+                continue
+            }
+            let valueStart = tag.index(after: quoteIndex)
+            guard let valueEnd = tag[valueStart...].firstIndex(of: tag[quoteIndex]) else { return nil }
+            let range = valueStart..<valueEnd
+            return AttributeValue(value: String(tag[range]), range: range)
+        }
+        return nil
     }
 
     private static func escape(_ value: String) -> String {

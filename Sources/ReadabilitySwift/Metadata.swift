@@ -23,8 +23,8 @@ enum MetadataExtractor {
 
         for script in scripts {
             guard let source = try? script.html() else { continue }
-            let withoutCDATAStart = SwiftRegex.replacing(in: source, pattern: "^\\s*<!\\[CDATA\\[", with: "", caseInsensitive: true)
-            let cleanedSource = SwiftRegex.replacing(in: withoutCDATAStart, pattern: "\\]\\]>\\s*$", with: "", caseInsensitive: true).trimmed()
+            let withoutCDATAStart = source.replacing(/(?i)^\s*<!\[CDATA\[/, with: "")
+            let cleanedSource = withoutCDATAStart.replacing(/(?i)\]\]>\s*$/, with: "").trimmed()
             guard let data = cleanedSource.data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: data) else { continue }
             // readabilityrs traverses serde_json::Value. Foundation exposes an
@@ -402,7 +402,7 @@ enum MetadataExtractor {
         let lowerDOM = domValue.lowercased()
         guard lowerDOM.contains(lowerExisting) else { return false }
         let remainder = lowerDOM.replacing(lowerExisting, with: "")
-        let ignored = SwiftRegex.replacing(in: remainder, pattern: #"[|_\-–—,.:()\[\]{}"']"#, with: " ")
+        let ignored = remainder.replacing(/[|_\-–—,.:()\[\]{}"']/, with: " ")
             .split(whereSeparator: { $0.isWhitespace })
             .filter { token in
                 let value = String(token)
@@ -451,19 +451,17 @@ enum MetadataExtractor {
 
     private static func hasSchemaContext(_ value: Any?) -> Bool {
         if let context = value as? String {
-            return SwiftRegex.contains(context, pattern: #"^https?://schema\.org/?$"#)
+            return context.wholeMatch(of: #/https?://schema\.org/?/#) != nil
         }
         if let context = value as? [String: Any], let vocabulary = context["@vocab"] as? String {
-            return SwiftRegex.contains(vocabulary, pattern: #"^https?://schema\.org/?$"#)
+            return vocabulary.wholeMatch(of: #/https?://schema\.org/?/#) != nil
         }
         return false
     }
 
     private static func isArticleType(_ value: Any?) -> Bool {
         guard let type = value as? String else { return false }
-        return Constants.regexps.jsonLDArticleTypes
-            .split(separator: "|")
-            .contains { type.lowercased() == $0.lowercased() }
+        return type.wholeMatch(of: Constants.jsonLDArticleTypes) != nil
     }
 
     private static func string(_ value: Any?) -> String? {
@@ -499,15 +497,15 @@ enum MetadataExtractor {
     private static func extractTitleFromDocument(_ document: Document) -> String? {
         guard let original = nonEmpty(try? document.title())?.trimmed(), !original.isEmpty else { return nil }
         var current = original
-        let separatorPattern = "\\s(?:\\||-|–|—|\\\\|/|>|»)\\s"
-        let separatorMatches = SwiftRegex.ranges(in: original, pattern: separatorPattern)
+        let separator = #/\s(?:\||-|–|—|\\|/|>|»)\s/#
+        let separatorMatches = original.matches(of: separator)
         var hadHierarchicalSeparator = false
         if !separatorMatches.isEmpty {
-            hadHierarchicalSeparator = SwiftRegex.contains(original, pattern: "\\s[\\\\/>»]\\s")
+            hadHierarchicalSeparator = original.firstMatch(of: #/\s[\\/>»]\s/#) != nil
             if let end = separatorMatches.last {
-                current = String(original[..<end.lowerBound]).trimmed()
+                current = String(original[..<end.range.lowerBound]).trimmed()
                 if wordCount(current) < 3 {
-                    current = SwiftRegex.replacing(in: original, pattern: "^[^\\|\\-–—\\\\/>»]*[\\|\\-–—\\\\/>»]", with: "", caseInsensitive: true)
+                    current = original.replacing(#/(?i)^[^|\-–—\\/>»]*[|\-–—\\/>»]/#, with: "")
                 }
             }
         } else if current.contains(": ") {
@@ -529,7 +527,7 @@ enum MetadataExtractor {
         }
         current = Utils.normalizeWhitespace(current)
         if wordCount(current) <= 4 {
-            let originalWordCount = wordCount(SwiftRegex.replacing(in: original, pattern: separatorPattern, with: " "))
+            let originalWordCount = wordCount(original.replacing(separator, with: " "))
             if !hadHierarchicalSeparator || wordCount(current) != originalWordCount - 1 { current = original }
         }
         return current

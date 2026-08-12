@@ -7,7 +7,7 @@ enum MarkdownConverter {
         // parseFragment returns a node array rather than a common Element, so a
         // document body is used as the equivalent conversion root.
         guard let document = try? SwiftSoup.parse(standardized) else {
-            return SwiftRegex.replacing(in: standardized, pattern: "(?is)<[^>]+>", with: "")
+            return standardized.replacing(#/(?is)<[^>]+>/#, with: "")
         }
         document.outputSettings().prettyPrint(pretty: false)
         guard let body = document.body() else { return "" }
@@ -32,7 +32,7 @@ enum MarkdownConverter {
             // Element.text() would normalize this before the converter can
             // distinguish normal flow from a code block. scraper exposes raw
             // Node::Text, whose SwiftSoup counterpart is getWholeText().
-            return state.inCodeBlock ? text.getWholeText() : MarkdownTextRules.escape(SwiftRegex.replacing(in: text.getWholeText(), pattern: "\\s+", with: " "))
+            return state.inCodeBlock ? text.getWholeText() : MarkdownTextRules.escape(text.getWholeText().replacing(/\s+/, with: " "))
         }
         guard let element = node as? Element else { return "" }
         let tag = element.tagName().lowercased()
@@ -285,10 +285,8 @@ enum MarkdownConverter {
     }
 
     private static func normalizeOutput(_ value: String) -> String {
-        SwiftRegex.replacing(
-            in: SwiftRegex.replacing(in: value, pattern: "[ \\t]+\\n", with: "\n"),
-            pattern: "\\n{3,}",
-            with: "\n\n"
-        ).trimmed()
+        value.replacing(/[ \t]+\n/, with: "\n")
+            .replacing(/\n{3,}/, with: "\n\n")
+            .trimmed()
     }
 }

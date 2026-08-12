@@ -30,15 +30,12 @@ enum Utils {
 
         // Rust's html_entities decoder handles both decimal and hexadecimal
         // numeric references. Replacing from the end keeps ranges valid.
-        return SwiftRegex.replacingMatches(
-            in: result,
-            pattern: "&#(?:x([0-9a-fA-F]+)|([0-9]+));"
-        ) { captures in
-            let hex = captures.indices.contains(1) ? captures[1].map(String.init) : nil
-            let decimal = captures.indices.contains(2) ? captures[2].map(String.init) : nil
+        return result.replacing(/&#(?:x([0-9a-fA-F]+)|([0-9]+));/) { match in
+            let hex = match.1.map(String.init)
+            let decimal = match.2.map(String.init)
             let scalar = (hex.flatMap { UInt32($0, radix: 16) } ?? decimal.flatMap { UInt32($0, radix: 10) })
                 .flatMap(Unicode.Scalar.init)
-            return scalar.map { String(Character($0)) }
+            return scalar.map { String(Character($0)) } ?? String(match.0)
         }
     }
 
@@ -51,13 +48,14 @@ enum Utils {
         // url::Url::parse here, so require an explicit RFC-style scheme to keep
         // relative author links from being mistaken for metadata URLs.
         guard let url = URL(string: value), let scheme = url.scheme, !scheme.isEmpty else { return false }
-        return SwiftRegex.contains(scheme, pattern: "^[A-Za-z][A-Za-z0-9+.-]*$")
+        return scheme.wholeMatch(of: /^[A-Za-z][A-Za-z0-9+.\-]*$/) != nil
     }
 
     static func looksLikeByline(_ text: String) -> Bool {
         let value = normalizeWhitespace(text).trimmed()
-        guard SwiftRegex.contains(value, pattern: "^(by|par)[\\s,:\\-–—]+", caseInsensitive: true) else { return false }
-        let remainder = SwiftRegex.replacing(in: value, pattern: "^(by|par)[\\s,:\\-–—]+", with: "", caseInsensitive: true)
+        let bylinePrefix = /(?i)^(?:by|par)[\s,:\-–—]+/
+        guard value.firstMatch(of: bylinePrefix) != nil else { return false }
+        let remainder = value.replacing(bylinePrefix, with: "")
         return remainder.first?.isUppercase == true
     }
 

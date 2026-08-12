@@ -5,11 +5,8 @@ enum MarkdownBlockquoteRules {
         if let callout, !callout.isEmpty { lines.append("\(prefix)[!\(callout.uppercased())]") }
         let content = inner.trimmed()
         if content.isEmpty { return "\n\n>\n\n" }
-        let normalized = SwiftRegex.replacing(
-            in: SwiftRegex.replacing(in: content, pattern: "\\n[ \\t]*\\n", with: "\n\n"),
-            pattern: "\\n{3,}",
-            with: "\n\n"
-        )
+        let normalized = content.replacing(/\n[ \t]*\n/, with: "\n\n")
+            .replacing(/\n{3,}/, with: "\n\n")
         lines.append(contentsOf: normalized.split(separator: "\n", omittingEmptySubsequences: false).map { line in
             line.trimmed().isEmpty ? prefix.trimmed() : prefix + line
         })

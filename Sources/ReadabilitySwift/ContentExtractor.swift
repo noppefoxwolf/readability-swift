@@ -49,7 +49,7 @@ enum ContentExtractor {
                 guard DOMUtils.isProbablyVisible(element), DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count >= 25 else { continue }
                 if flags.contains(.stripUnlikelies) {
                     let match = DOMUtils.classAndID(element)
-                    if matches(match, Constants.regexps.unlikelyCandidates) && !matches(match, Constants.regexps.okMaybeItsACandidate) { continue }
+                    if matches(match, Constants.unlikelyCandidates) && !matches(match, Constants.okMaybeItsACandidate) { continue }
                 }
                 result.append(element)
             }
@@ -232,7 +232,7 @@ enum ContentExtractor {
                 guard textLength >= 160,
                       density < 0.35,
                       density < bestDensity - 0.15,
-                      !(candidateWeight < 0 && !matches(marker, Constants.regexps.positive)),
+                      !(candidateWeight < 0 && !matches(marker, Constants.positive)),
                       paragraphCount > 0 || textLength >= 300 else { return nil }
                 return (candidate.element, candidate.score)
             }.max(by: { $0.1 < $1.1 })
@@ -299,12 +299,12 @@ enum ContentExtractor {
         let text = DOMUtils.getInnerText(element, normalizeSpaces: false)
         guard !text.isEmpty else { return false }
         let classID = DOMUtils.classAndID(element)
-        if matches(classID, Constants.regexps.unlikelyCandidates) && !matches(classID, Constants.regexps.okMaybeItsACandidate) {
+        if matches(classID, Constants.unlikelyCandidates) && !matches(classID, Constants.okMaybeItsACandidate) {
             return false
         }
         let density = DOMUtils.linkDensity(element)
         if text.utf8.count > 80 && density < 0.25 { return true }
-        return text.utf8.count <= 80 && density == 0 && SwiftRegex.contains(text, pattern: "[.!?](\\s|$)")
+        return text.utf8.count <= 80 && density == 0 && text.firstMatch(of: /[.!?](?:\s|$)/) != nil
     }
 
     private static func shouldKeepBlockElement(_ element: Element, bestScore: Double) -> Bool {
@@ -385,7 +385,7 @@ enum ContentExtractor {
         }
     }
 
-    private static func matches(_ value: String, _ pattern: String) -> Bool {
-        SwiftRegex.containsLiteralAlternative(value, pattern: pattern, caseInsensitive: true)
+    private static func matches(_ value: String, _ regex: Regex<Substring>) -> Bool {
+        value.firstMatch(of: regex) != nil
     }
 }

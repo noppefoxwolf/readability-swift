@@ -18,11 +18,7 @@ enum PostProcessor {
             // whitespace. readabilityrs protects these serialized spans with a
             // byte scanner; Preformatted is its String.Index-based Swift port.
             result = Preformatted.mapOutside(result) { fragment in
-                SwiftRegex.replacing(
-                    in: SwiftRegex.replacing(in: fragment, pattern: "\\n{3,}", with: "\n\n"),
-                    pattern: "[ ]{2,}",
-                    with: " "
-                )
+                fragment.replacing(/\n{3,}/, with: "\n\n").replacing(/[ ]{2,}/, with: " ")
             }
         }
         return result
@@ -48,15 +44,15 @@ enum PostProcessor {
     }
 
     private static func removingPresentationAttributes(from html: String) -> String {
-        let patterns = [
-            #"(?i)\s+style\s*=\s*"[^"]*""#,
-            #"(?i)\s+style\s*=\s*'[^']*'"#,
-            #"(?i)\s+align\s*=\s*["'][^"']*["']"#,
-            #"(?i)\s+bgcolor\s*=\s*["'][^"']*["']"#,
-            #"(?i)\s+valign\s*=\s*["'][^"']*["']"#,
+        let patterns: [Regex<Substring>] = [
+            #/(?i)\s+style\s*=\s*"[^"]*"/#,
+            #/(?i)\s+style\s*=\s*'[^']*'/#,
+            #/(?i)\s+align\s*=\s*["'][^"']*["']/#,
+            #/(?i)\s+bgcolor\s*=\s*["'][^"']*["']/#,
+            #/(?i)\s+valign\s*=\s*["'][^"']*["']/#,
         ]
-        return patterns.reduce(html) { result, pattern in
-            SwiftRegex.replacing(in: result, pattern: pattern, with: "")
+        return patterns.reduce(html) { result, regex in
+            result.replacing(regex, with: "")
         }
     }
 
@@ -211,12 +207,9 @@ enum PostProcessor {
             if cleaned == result { break }
             result = cleaned
         }
-        return SwiftRegex.replacing(
-            in: result,
-            pattern: #"(</(?:p|div|h[1-6])>)\s*(?:<br\s*/?>[\s\n]*)+\s*(<(?:p|div|h[1-6]))"#,
-            with: "$1\n$2",
-            caseInsensitive: true
-        )
+        return result.replacing(#/(?i)(</(?:p|div|h[1-6])>)\s*(?:<br\s*/?>[\s\n]*)+\s*(<(?:p|div|h[1-6]))/#) { match in
+            "\(match.1)\n\(match.2)"
+        }
     }
 
     private static func removingEmptyParagraphPass(from html: String) -> String {
@@ -262,7 +255,7 @@ enum PostProcessor {
     }
 
     private static func removingBreakTags(from content: String) -> String {
-        SwiftRegex.replacing(in: content, pattern: #"<br\s*/?>"#, with: "", caseInsensitive: true)
+        content.replacing(#/(?i)<br\s*/?>/#, with: "")
             .trimmed()
     }
 }

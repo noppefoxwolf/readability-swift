@@ -142,7 +142,7 @@ public final class Readability {
     private func excerptFromText(_ text: String) -> String? {
         let cleaned = text.trimmed()
         guard !cleaned.isEmpty else { return nil }
-        for paragraph in SwiftRegex.split(cleaned, pattern: "\n\n") {
+        for paragraph in cleaned.split(separator: "\n\n", omittingEmptySubsequences: false) {
             let value = paragraph.trimmed()
             guard value.utf8.count >= 80, !Utils.looksLikeBracketMenu(value) else { continue }
             return truncateText(value, maximumLength: 300)
@@ -158,7 +158,7 @@ public final class Readability {
             let value = rawText(from: element).trimmed()
             let normalizedValue = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
             if normalizedValue == normalizedExcerpt {
-                return SwiftRegex.replacing(in: value, pattern: "\\n[ \\t]+", with: "\n ")
+                return value.replacing(/\n[ \t]+/, with: "\n ")
             }
         }
         return nil

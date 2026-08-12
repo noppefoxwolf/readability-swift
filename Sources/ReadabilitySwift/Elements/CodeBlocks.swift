@@ -70,8 +70,8 @@ enum ElementCodeBlocks {
                 return ElementLanguages.normalizeLanguage(String(value.dropFirst(prefix.count)))
             }
         }
-        if let match = SwiftRegex.firstRange(in: classes, pattern: "brush:\\s*(\\w+)", caseInsensitive: true) {
-            let value = String(classes[match]).replacingLiteral("brush:", with: "", caseInsensitive: true).trimmed()
+        if let match = classes.firstMatch(of: /(?i)brush:\s*(\w+)/) {
+            let value = String(match.1)
             if !value.isEmpty { return ElementLanguages.normalizeLanguage(value) }
         }
         for token in classes.split(whereSeparator: { $0.isWhitespace }) where ElementLanguages.isKnownLanguage(String(token)) {
@@ -91,12 +91,12 @@ enum ElementCodeBlocks {
         var result = value.replacing("\t", with: "    ").replacing("\u{00a0}", with: " ")
         let lines = result.lines().map(String.init)
         let numbered = lines.count > 2 && lines.filter { !$0.trimmed().isEmpty }.prefix(5).allSatisfy {
-            SwiftRegex.contains($0, pattern: "^\\s*\\d+[\\s|]")
+            $0.firstMatch(of: /^\s*\d+[\s|]/) != nil
         }
         if numbered {
-            result = lines.map { SwiftRegex.replacing(in: $0, pattern: "^\\s*\\d+[\\s|]", with: "") }.joined(separator: "\n")
+            result = lines.map { $0.replacing(/^\s*\d+[\s|]/, with: "") }.joined(separator: "\n")
         }
-        result = SwiftRegex.replacing(in: result, pattern: "\n{3,}", with: "\n\n")
+        result = result.replacing(/\n{3,}/, with: "\n\n")
         return result.trimmed()
     }
 

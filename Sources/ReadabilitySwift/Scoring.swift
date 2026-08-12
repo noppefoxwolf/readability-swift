@@ -7,9 +7,9 @@ enum Scoring {
         for attribute in ["class", "id"] {
             let value = ((try? element.attr(attribute)) ?? "").lowercased()
             guard !value.isEmpty else { continue }
-            if matches(value, Constants.regexps.negative) {
+            if matches(value, Constants.negative) {
                 weight -= 25
-            } else if matches(value, Constants.regexps.positive) {
+            } else if matches(value, Constants.positive) {
                 weight += 25
             }
         }
@@ -50,10 +50,10 @@ enum Scoring {
         let rel = ((try? element.attr("rel")) ?? "").lowercased()
         let itemprop = ((try? element.attr("itemprop")) ?? "").lowercased()
         let length = DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count
-        return (rel == "author" || itemprop.contains("author") || matches(matchString, Constants.regexps.byline)) && length > 0 && length < 100
+        return (rel == "author" || itemprop.contains("author") || matches(matchString, Constants.byline)) && length > 0 && length < 100
     }
 
-    private static func matches(_ value: String, _ pattern: String) -> Bool {
-        SwiftRegex.containsLiteralAlternative(value, pattern: pattern, caseInsensitive: true)
+    private static func matches(_ value: String, _ regex: Regex<Substring>) -> Bool {
+        value.firstMatch(of: regex) != nil
     }
 }
