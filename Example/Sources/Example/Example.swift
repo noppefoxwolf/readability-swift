@@ -15,7 +15,9 @@ struct Example {
             }
 
             let document = try await readInput(from: configuration.input)
-            let options = ReadabilityOptions(outputMarkdown: configuration.format == .markdown)
+            let options = ReadabilityOptions(
+                markdown: configuration.format == .markdown ? MarkdownOptions() : nil
+            )
             let baseURLString = configuration.url ?? document.baseURL
             let baseURL: URL?
             if let baseURLString {
@@ -103,7 +105,7 @@ struct Example {
     private static func render(_ article: Article, format: OutputFormat) -> String {
         switch format {
         case .text:
-            return article.textContent ?? ""
+            return article.textContent
         case .markdown:
             return article.markdownContent ?? ""
         }
