@@ -6,30 +6,32 @@ enum ElementFootnotes {
         let content: String
     }
 
-    static func standardize(_ html: String) -> String {
+    static func standardize(_ html: String) throws -> String {
         // scraper's fragment root and ElementRef::html() do not map directly to
         // SwiftSoup. Parse into a body shell and use outerHtml() wherever the
         // Rust implementation serializes the selected container itself.
-        guard let document = try? SwiftSoup.parse(html), let body = document.body() else { return html }
+        let document = try SwiftSoup.parse(html)
+        guard let body = document.body() else { return html }
         var references: [String] = []
-        for sup in (try? body.select("sup")) ?? SwiftSoup.Elements() {
-            guard let anchor = try? sup.select("a").first() else { continue }
-            let href = (try? anchor.attr("href")) ?? ""
-            if href.lowercased().contains("#fn") || href.lowercased().contains("#footnote"), let original = try? sup.outerHtml() {
-                references.append(original)
+        for sup in try body.select("sup") {
+            guard let anchor = try sup.select("a").first() else { continue }
+            let href = DOMUtils.attribute("href", of: anchor)
+            if href.lowercased().contains("#fn") || href.lowercased().contains("#footnote") {
+                references.append(try sup.outerHtml())
             }
         }
-        for anchor in (try? body.select("a.footnote-ref, a.footnote-anchor")) ?? SwiftSoup.Elements() {
+        for anchor in try body.select("a.footnote-ref, a.footnote-anchor") {
             guard !DOMUtils.ancestors(anchor, limit: 0).contains(where: { $0.tagName().lowercased() == "sup" }),
-                  let original = try? anchor.outerHtml(), !references.contains(original) else { continue }
+                  !references.contains(try anchor.outerHtml()) else { continue }
+            let original = try anchor.outerHtml()
             references.append(original)
         }
 
         var definitions: [Definition] = []
         for selector in ["div.footnotes", "section.footnotes", "div.footnotes-footer", "section[role=doc-endnotes]", "ol.footnote-list"] {
-            for container in (try? body.select(selector)) ?? SwiftSoup.Elements() {
-                guard let containerHTML = try? container.outerHtml() else { continue }
-                for item in (try? container.select("li")) ?? SwiftSoup.Elements() {
+            for container in try body.select(selector) {
+                let containerHTML = try container.outerHtml()
+                for item in try container.select("li") {
                     let content = extractContent(item)
                     if !content.isEmpty { definitions.append(Definition(container: containerHTML, content: content)) }
                 }
@@ -38,9 +40,9 @@ enum ElementFootnotes {
             if !definitions.isEmpty { break }
         }
         if definitions.isEmpty {
-            for item in (try? body.select("div.footnote[data-component-name]")) ?? SwiftSoup.Elements() {
+            for item in try body.select("div.footnote[data-component-name]") {
                 let content = DOMUtils.normalizeWhitespace(DOMUtils.textContent(item))
-                if let container = try? item.outerHtml(), !content.isEmpty { definitions.append(Definition(container: container, content: content)) }
+                if !content.isEmpty { definitions.append(Definition(container: try item.outerHtml(), content: content)) }
             }
         }
         guard !references.isEmpty || !definitions.isEmpty else { return html }
@@ -61,13 +63,13 @@ enum ElementFootnotes {
         return result
     }
 
-    static func standardizeFootnotes(_ html: String) -> String { standardize(html) }
+    static func standardizeFootnotes(_ html: String) throws -> String { try standardize(html) }
 
     private static func extractContent(_ item: Element) -> String {
         var content = ""
         for node in item.getChildNodes() {
             if let child = node as? Element {
-                let className = ((try? child.attr("class")) ?? "").lowercased()
+                let className = DOMUtils.attribute("class", of: child).lowercased()
                 if child.tagName().lowercased() == "a" && (className.contains("backref") || className.contains("footnote-back")) { continue }
                 content += DOMUtils.textContent(child)
             } else if let text = node as? TextNode {

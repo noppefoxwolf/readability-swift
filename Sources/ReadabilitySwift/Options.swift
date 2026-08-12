@@ -1,52 +1,67 @@
+public enum HTMLClassPolicy: Sendable, Hashable {
+    /// Removes every HTML class from extracted content.
+    case removeAll
+
+    /// Keeps only the listed class names.
+    case preserve(Set<String>)
+
+    /// Keeps every HTML class from the source document.
+    case keepAll
+
+    func retainedClasses(from value: String) -> String? {
+        let classes = value.split(whereSeparator: \.isWhitespace).map(String.init)
+        let retained: [String]
+        switch self {
+        case .removeAll:
+            retained = []
+        case let .preserve(preservedClasses):
+            retained = classes.filter(preservedClasses.contains)
+        case .keepAll:
+            retained = classes
+        }
+        return retained.isEmpty ? nil : retained.joined(separator: " ")
+    }
+}
+
 public struct ReadabilityOptions {
-    public var debug: Bool
-    public var maxElemsToParse: Int
-    public var nbTopCandidates: Int
-    public var charThreshold: Int
-    public var classesToPreserve: [String]
-    public var keepClasses: Bool
-    public var disableJSONLD: Bool
+    public var maximumElementCount: Int
+    public var topCandidateCount: Int
+    public var characterThreshold: Int
+    public var classPolicy: HTMLClassPolicy
+    public var extractsJSONLD: Bool
     public var allowedVideoRegex: Regex<Substring>?
     public var linkDensityModifier: Double
-    public var removeTitleFromContent: Bool
-    public var cleanStyles: Bool
-    public var cleanWhitespace: Bool
-    public var outputMarkdown: Bool
-    public var markdownOptions: MarkdownOptions?
-    public var sanitizeContent: Bool
+    public var removesTitleFromContent: Bool
+    public var cleansStyles: Bool
+    public var cleansWhitespace: Bool
+    public var markdown: MarkdownOptions?
+    public var sanitizesContent: Bool
 
     public init(
-        debug: Bool = false,
-        maxElemsToParse: Int = 0,
-        nbTopCandidates: Int = 5,
-        charThreshold: Int = 500,
-        classesToPreserve: [String] = ["page"],
-        keepClasses: Bool = false,
-        disableJSONLD: Bool = false,
+        maximumElementCount: Int = 0,
+        topCandidateCount: Int = 5,
+        characterThreshold: Int = 500,
+        classPolicy: HTMLClassPolicy = .preserve(["page"]),
+        extractsJSONLD: Bool = true,
         allowedVideoRegex: Regex<Substring>? = nil,
         linkDensityModifier: Double = 0,
-        removeTitleFromContent: Bool = false,
-        cleanStyles: Bool = true,
-        cleanWhitespace: Bool = true,
-        outputMarkdown: Bool = false,
-        markdownOptions: MarkdownOptions? = nil,
-        sanitizeContent: Bool = false
+        removesTitleFromContent: Bool = false,
+        cleansStyles: Bool = true,
+        cleansWhitespace: Bool = true,
+        markdown: MarkdownOptions? = nil,
+        sanitizesContent: Bool = false
     ) {
-        self.debug = debug
-        self.maxElemsToParse = maxElemsToParse
-        self.nbTopCandidates = nbTopCandidates
-        self.charThreshold = charThreshold
-        self.classesToPreserve = classesToPreserve
-        self.keepClasses = keepClasses
-        self.disableJSONLD = disableJSONLD
+        self.maximumElementCount = maximumElementCount
+        self.topCandidateCount = topCandidateCount
+        self.characterThreshold = characterThreshold
+        self.classPolicy = classPolicy
+        self.extractsJSONLD = extractsJSONLD
         self.allowedVideoRegex = allowedVideoRegex
         self.linkDensityModifier = linkDensityModifier
-        self.removeTitleFromContent = removeTitleFromContent
-        self.cleanStyles = cleanStyles
-        self.cleanWhitespace = cleanWhitespace
-        self.outputMarkdown = outputMarkdown
-        self.markdownOptions = markdownOptions
-        self.sanitizeContent = sanitizeContent
+        self.removesTitleFromContent = removesTitleFromContent
+        self.cleansStyles = cleansStyles
+        self.cleansWhitespace = cleansWhitespace
+        self.markdown = markdown
+        self.sanitizesContent = sanitizesContent
     }
-
 }

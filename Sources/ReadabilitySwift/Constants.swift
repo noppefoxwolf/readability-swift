@@ -4,7 +4,6 @@ struct ParseFlags: OptionSet, Sendable {
     init(rawValue: UInt32) { self.rawValue = rawValue }
     static let stripUnlikelies = ParseFlags(rawValue: 1)
     static let weightClasses = ParseFlags(rawValue: 2)
-    static let cleanConditionally = ParseFlags(rawValue: 4)
 }
 
 enum Constants {

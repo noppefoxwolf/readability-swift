@@ -4,9 +4,7 @@ enum PostProcessor {
     static func prepArticle(
         _ html: String,
         cleanStyles: Bool,
-        cleanWhitespace: Bool,
-        keepClasses: Bool = false,
-        classesToPreserve: [String] = ["page"]
+        cleanWhitespace: Bool
     ) -> String {
         var result = cleanStyles ? removingPresentationAttributes(from: html) : html
         result = removingUnwantedElements(from: result)
@@ -24,23 +22,39 @@ enum PostProcessor {
         return result
     }
 
-    static func removeTitleFromContent(_ html: String, title: String) -> String {
-        guard let document = try? DOMUtils.parse(html), let body = document.body() else { return html }
+    static func applyClassPolicy(_ policy: HTMLClassPolicy, to html: String) throws -> String {
+        guard policy != .keepAll else { return html }
+        let document = try DOMUtils.parse(html)
+        guard let body = document.body() else { return html }
+        for element in try body.select("[class]") {
+            let className = DOMUtils.attribute("class", of: element)
+            if let retained = policy.retainedClasses(from: className) {
+                try element.attr("class", retained)
+            } else {
+                try element.removeAttr("class")
+            }
+        }
+        return try body.html()
+    }
+
+    static func removeTitleFromContent(_ html: String, title: String) throws -> String {
+        let document = try DOMUtils.parse(html)
+        guard let body = document.body() else { return html }
         let normalizedTitle = DOMUtils.normalizeWhitespace(title).lowercased()
         guard !normalizedTitle.isEmpty else { return html }
-        for element in (try? body.select("h1,h2")) ?? SwiftSoup.Elements() where DOMUtils.normalizeWhitespace(DOMUtils.textContent(element)).lowercased() == normalizedTitle {
-            try? element.remove()
+        for element in try body.select("h1,h2") where DOMUtils.normalizeWhitespace(DOMUtils.textContent(element)).lowercased() == normalizedTitle {
+            try element.remove()
         }
-        for element in (try? body.select("h1,h2")) ?? SwiftSoup.Elements() {
+        for element in try body.select("h1,h2") {
             let candidate = DOMUtils.normalizeWhitespace(DOMUtils.textContent(element)).lowercased()
             guard !candidate.isEmpty else { continue }
             let ratio = Double(min(candidate.count, normalizedTitle.count)) / Double(max(candidate.count, normalizedTitle.count))
-            if ratio > 0.8 && (candidate.contains(normalizedTitle) || normalizedTitle.contains(candidate)) { try? element.remove() }
+            if ratio > 0.8 && (candidate.contains(normalizedTitle) || normalizedTitle.contains(candidate)) { try element.remove() }
         }
-        for header in (try? body.select("header")) ?? SwiftSoup.Elements() where DOMUtils.normalizeWhitespace(DOMUtils.textContent(header)).isEmpty {
-            try? header.remove()
+        for header in try body.select("header") where DOMUtils.normalizeWhitespace(DOMUtils.textContent(header)).isEmpty {
+            try header.remove()
         }
-        return (try? body.html()) ?? html
+        return try body.html()
     }
 
     private static func removingPresentationAttributes(from html: String) -> String {
@@ -120,9 +134,8 @@ enum PostProcessor {
         var searchStart = result.startIndex
 
         while searchStart < result.endIndex {
-            guard let openingRange = result.firstRange(
+            guard let openingRange = result.firstASCIICaseInsensitiveRange(
                 of: openingNeedle,
-                caseInsensitive: true,
                 in: searchStart..<result.endIndex
             ) else { break }
             let boundary = openingRange.upperBound
@@ -146,9 +159,8 @@ enum PostProcessor {
                 searchStart = boundary
                 continue
             }
-            guard let closingRange = result.firstRange(
+            guard let closingRange = result.firstASCIICaseInsensitiveRange(
                 of: closingNeedle,
-                caseInsensitive: true,
                 in: openingEnd.upperBound..<result.endIndex
             ) else { break }
             result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
@@ -172,9 +184,8 @@ enum PostProcessor {
         var searchStart = result.startIndex
 
         while searchStart < result.endIndex {
-            guard let openingRange = result.firstRange(
+            guard let openingRange = result.firstASCIICaseInsensitiveRange(
                 of: openingNeedle,
-                caseInsensitive: true,
                 in: searchStart..<result.endIndex
             ) else { break }
             let boundary = openingRange.upperBound
@@ -183,9 +194,8 @@ enum PostProcessor {
                 continue
             }
             guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex) else { break }
-            if let closingRange = result.firstRange(
+            if let closingRange = result.firstASCIICaseInsensitiveRange(
                 of: closingNeedle,
-                caseInsensitive: true,
                 in: openingEnd.upperBound..<result.endIndex
             ) {
                 result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
@@ -216,9 +226,8 @@ enum PostProcessor {
         var result = html
         var searchStart = result.startIndex
         while searchStart < result.endIndex {
-            guard let openingRange = result.firstRange(
+            guard let openingRange = result.firstASCIICaseInsensitiveRange(
                 of: "<p",
-                caseInsensitive: true,
                 in: searchStart..<result.endIndex
             ) else { break }
             let boundary = openingRange.upperBound
@@ -227,9 +236,8 @@ enum PostProcessor {
                 continue
             }
             guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex),
-                  let closingRange = result.firstRange(
+                  let closingRange = result.firstASCIICaseInsensitiveRange(
                     of: "</p>",
-                    caseInsensitive: true,
                     in: openingEnd.upperBound..<result.endIndex
                   ) else { break }
             let content = String(result[openingEnd.upperBound..<closingRange.lowerBound])
@@ -246,9 +254,9 @@ enum PostProcessor {
     private static func paragraphContentIsEmpty(_ content: String) -> Bool {
         let trimmed = content.trimmed()
         if trimmed.isEmpty || removingBreakTags(from: trimmed).isEmpty { return true }
-        guard trimmed.firstRange(of: "<span", caseInsensitive: true)?.lowerBound == trimmed.startIndex,
+        guard trimmed.firstASCIICaseInsensitiveRange(of: "<span")?.lowerBound == trimmed.startIndex,
               let openingEnd = trimmed.firstIndex(of: ">"),
-              let closingRange = trimmed.lastRange(of: "</span>", caseInsensitive: true),
+              let closingRange = trimmed.lastASCIICaseInsensitiveRange(of: "</span>"),
               closingRange.upperBound == trimmed.endIndex else { return false }
         let spanContent = String(trimmed[trimmed.index(after: openingEnd)..<closingRange.lowerBound])
         return removingBreakTags(from: spanContent).isEmpty

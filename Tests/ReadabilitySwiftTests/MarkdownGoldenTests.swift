@@ -20,8 +20,8 @@ private let knownMarkdownGoldenDivergences: Set<Int> = []
     let cases = try loadMarkdownGoldenCases()
     #expect(cases.count == 105)
 
-    let differences = cases.enumerated().compactMap { offset, testCase -> MarkdownGoldenDifference? in
-        let actual = Markdown.convert(html: testCase.html)
+    let differences = try cases.enumerated().compactMap { offset, testCase -> MarkdownGoldenDifference? in
+        let actual = try Markdown.convert(testCase.html)
         guard actual != testCase.markdown else { return nil }
         return MarkdownGoldenDifference(
             index: offset + 1,

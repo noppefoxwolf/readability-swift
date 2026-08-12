@@ -76,17 +76,15 @@ private struct ArticleGoldenDifference {
     let options = ReadabilityOptions()
     let preprocessedHTML = Cleaner.prepDocument(sourceHTML)
     let document = try DOMUtils.parse(preprocessedHTML)
-    Cleaner.removeUnsafeElements(from: document)
-    let extracted = try #require(try ContentExtractor.grabArticle(document, options: options).get())
-    let lightHTML = try Cleaner.cleanArticleContentLight(extracted).get()
+    try Cleaner.removeUnsafeElements(from: document)
+    let extracted = try #require(try ContentExtractor.grabArticle(document, options: options))
+    let lightHTML = try Cleaner.cleanArticleContentLight(extracted)
     let preparedHTML = PostProcessor.prepArticle(
         lightHTML,
-        cleanStyles: options.cleanStyles,
-        cleanWhitespace: options.cleanWhitespace,
-        keepClasses: options.keepClasses,
-        classesToPreserve: options.classesToPreserve
+        cleanStyles: options.cleansStyles,
+        cleanWhitespace: options.cleansWhitespace
     )
-    let cleanedHTML = try Cleaner.cleanArticleContent(preparedHTML).get()
+    let cleanedHTML = try Cleaner.cleanArticleContent(preparedHTML)
 
     let stageLengths = [extracted, lightHTML, preparedHTML, cleanedHTML].map(normalizedArticleGoldenHTMLLength)
     #expect(stageLengths.allSatisfy { $0 >= 1_000 })
@@ -167,8 +165,8 @@ private func evaluateArticleGolden(_ testCase: ArticleGoldenCase) -> [ArticleGol
         compare(testCase.name, "siteName", expected.siteName, actual.siteName, into: &differences)
         compare(testCase.name, "lang", expected.lang, actual.lang, into: &differences)
         compare(testCase.name, "publishedTime", expected.publishedTime, actual.publishedTime, into: &differences)
-        if expected.length != actual.length {
-            differences.append(difference(testCase.name, "length", String(expected.length), String(actual.length)))
+        if expected.length != actual.utf8Length {
+            differences.append(difference(testCase.name, "length", String(expected.length), String(actual.utf8Length)))
         }
         let actualText = normalizeArticleGoldenText(actual.textContent)
         if expected.normalizedTextContent != actualText {

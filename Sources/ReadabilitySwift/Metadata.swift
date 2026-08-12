@@ -17,16 +17,21 @@ struct Metadata {
 }
 
 enum MetadataExtractor {
-    static func getJSONLD(_ document: Document) -> Metadata {
+    static func getJSONLD(_ document: Document) throws -> Metadata {
         var metadata = Metadata()
-        guard let scripts = try? document.select("script[type='application/ld+json']") else { return metadata }
+        let scripts = try document.select("script[type='application/ld+json']")
 
         for script in scripts {
-            guard let source = try? script.html() else { continue }
+            let source = try script.html()
             let withoutCDATAStart = source.replacing(/(?i)^\s*<!\[CDATA\[/, with: "")
             let cleanedSource = withoutCDATAStart.replacing(/(?i)\]\]>\s*$/, with: "").trimmed()
-            guard let data = cleanedSource.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) else { continue }
+            guard let data = cleanedSource.data(using: .utf8) else { continue }
+            let object: Any
+            do {
+                object = try JSONSerialization.jsonObject(with: data)
+            } catch {
+                continue
+            }
             // readabilityrs traverses serde_json::Value. Foundation exposes an
             // untyped Any graph instead, so articleDictionary and the helpers
             // below explicitly preserve the object/array/string cases used by
@@ -54,14 +59,14 @@ enum MetadataExtractor {
         return metadata
     }
 
-    static func getArticleMetadata(_ document: Document, jsonLD: Metadata) -> Metadata {
+    static func getArticleMetadata(_ document: Document, jsonLD: Metadata) throws -> Metadata {
         var metadata = jsonLD
-        let metaTags = (try? document.select("meta")) ?? SwiftSoup.Elements()
+        let metaTags = try document.select("meta")
         var values: [String: String] = [:]
         for meta in metaTags {
-            let name = ((try? meta.attr("name")) ?? "").lowercased()
-            let property = ((try? meta.attr("property")) ?? "").lowercased()
-            let content = (try? meta.attr("content"))?.trimmed() ?? ""
+            let name = DOMUtils.attribute("name", of: meta).lowercased()
+            let property = DOMUtils.attribute("property", of: meta).lowercased()
+            let content = DOMUtils.attribute("content", of: meta).trimmed()
             guard !content.isEmpty else { continue }
             for key in property.split(whereSeparator: { $0.isWhitespace }) where !key.isEmpty {
                 let propertyName = String(key).lowercased()
@@ -80,28 +85,30 @@ enum MetadataExtractor {
         metadata.image = metadata.image ?? values["og:image:secure_url"] ?? values["og:image:url"] ?? values["og:image"] ?? values["twitter:image"] ?? values["thumbnail"] ?? values["image"]
         metadata.publishedTime = metadata.publishedTime ?? values["article:published_time"] ?? values["parsely-pub-date"]
 
-        if let html = (try? document.select("html"))?.first() {
-            metadata.dir = nonEmpty(try? html.attr("dir"))
-            metadata.lang = nonEmpty(try? html.attr("lang"))
+        if let html = try document.select("html").first() {
+            metadata.dir = nonEmpty(DOMUtils.attribute("dir", of: html))
+            metadata.lang = nonEmpty(DOMUtils.attribute("lang", of: html))
         }
         if metadata.lang == nil {
-            metadata.lang = ((try? document.select("meta[http-equiv='Content-Language'], meta[http-equiv='content-language']")) ?? SwiftSoup.Elements())
-                .compactMap { nonEmpty(try? $0.attr("content")) }.first
+            metadata.lang = try document.select("meta[http-equiv='Content-Language'], meta[http-equiv='content-language']")
+                .compactMap { nonEmpty(DOMUtils.attribute("content", of: $0)) }.first
         }
         if metadata.lang == nil {
-            metadata.lang = ((try? document.select("meta[name='lang'], meta[name='language']")) ?? SwiftSoup.Elements())
-                .compactMap { nonEmpty(try? $0.attr("content")) }.first
+            metadata.lang = try document.select("meta[name='lang'], meta[name='language']")
+                .compactMap { nonEmpty(DOMUtils.attribute("content", of: $0)) }.first
         }
         if metadata.image == nil {
-            if let imageSource = (try? document.select("link[rel=image_src]"))?.first() {
-                metadata.image = nonEmpty(try? imageSource.attr("href"))
+            if let imageSource = try document.select("link[rel=image_src]").first() {
+                metadata.image = nonEmpty(DOMUtils.attribute("href", of: imageSource))
             }
-            if metadata.image == nil, let imageElement = (try? document.select("[itemprop=image]"))?.first() {
-                metadata.image = nonEmpty(try? imageElement.attr("content")) ?? nonEmpty(try? imageElement.attr("src")) ?? nonEmpty(try? imageElement.attr("href"))
+            if metadata.image == nil, let imageElement = try document.select("[itemprop=image]").first() {
+                metadata.image = nonEmpty(DOMUtils.attribute("content", of: imageElement))
+                    ?? nonEmpty(DOMUtils.attribute("src", of: imageElement))
+                    ?? nonEmpty(DOMUtils.attribute("href", of: imageElement))
             }
         }
         let cleanedMetaByline = metadata.byline.flatMap { Utils.cleanBylineText(Utils.unescapeHTMLEntities($0)) }
-        if let domByline = findByline(in: document) {
+        if let domByline = try findByline(in: document) {
             if let existing = cleanedMetaByline {
                 if shouldPreferDOMByline(existing: existing, dom: domByline.text, highConfidence: domByline.highConfidence) { metadata.byline = domByline.text } else { metadata.byline = existing }
             } else {
@@ -110,8 +117,9 @@ enum MetadataExtractor {
         } else {
             metadata.byline = cleanedMetaByline
         }
-        metadata.title = metadata.title ?? extractTitleFromDocument(document)
-        if metadata.title == nil { metadata.title = "" }
+        if metadata.title == nil {
+            metadata.title = try extractTitleFromDocument(document)
+        }
         metadata.title = metadata.title.map(Utils.unescapeHTMLEntities)
         metadata.excerpt = metadata.excerpt.map(Utils.unescapeHTMLEntities).flatMap { value in
             let cleaned = value.trimmed()
@@ -131,30 +139,30 @@ enum MetadataExtractor {
         let highConfidence: Bool
     }
 
-    private static func findByline(in document: Document) -> DOMBylineCandidate? {
-        if let standfirst = findStandfirstByline(in: document) { return DOMBylineCandidate(text: standfirst, highConfidence: true) }
-        let authorLinks = ((try? document.select("a")) ?? SwiftSoup.Elements()).filter { link in
-            ((try? link.attr("rel")) ?? "").split(whereSeparator: { $0.isWhitespace }).contains { $0.lowercased() == "author" }
+    private static func findByline(in document: Document) throws -> DOMBylineCandidate? {
+        if let standfirst = try findStandfirstByline(in: document) { return DOMBylineCandidate(text: standfirst, highConfidence: true) }
+        let authorLinks = try document.select("a").filter { link in
+            DOMUtils.attribute("rel", of: link).split(whereSeparator: { $0.isWhitespace }).contains { $0.lowercased() == "author" }
         }
         for element in authorLinks {
-            if isDroppedOrganizationByline(element) { return nil }
-            if let value = bylineCandidate(element, explicit: true) { return DOMBylineCandidate(text: value, highConfidence: true) }
+            if try isDroppedOrganizationByline(element) { return nil }
+            if let value = try bylineCandidate(element, explicit: true) { return DOMBylineCandidate(text: value, highConfidence: true) }
         }
-        for element in (try? document.select("[itemprop]")) ?? SwiftSoup.Elements() {
-            let itemprop = ((try? element.attr("itemprop")) ?? "").lowercased()
+        for element in try document.select("[itemprop]") {
+            let itemprop = DOMUtils.attribute("itemprop", of: element).lowercased()
             if itemprop.split(whereSeparator: { $0.isWhitespace }).contains("author") {
-                if isDroppedOrganizationByline(element) { return nil }
-                if let value = bylineCandidate(element, explicit: true) { return DOMBylineCandidate(text: value, highConfidence: true) }
+                if try isDroppedOrganizationByline(element) { return nil }
+                if let value = try bylineCandidate(element, explicit: true) { return DOMBylineCandidate(text: value, highConfidence: true) }
             }
         }
 
         var fallback: DOMBylineCandidate?
         let patterns = [".byline", ".pb-byline", ".author", ".by", ".writer", ".article-author", ".post-author", ".entry-author", "#byline", "#author", "[class*=author]", "[class*=byline]"]
         for pattern in patterns {
-            for element in (try? document.select(pattern)) ?? SwiftSoup.Elements() {
+            for element in try document.select(pattern) {
                 guard !isIgnorableBylineContext(element) || elementHasBylineKeyword(element) else { continue }
                 guard !isNoiseBylineContext(element) || elementHasBylineKeyword(element) else { continue }
-                let text = cleanedCandidateText(element)
+                let text = try cleanedCandidateText(element)
                 guard !text.isEmpty, text.utf8.count <= 100 else { continue }
                 let caps = looksLikeCapsAuthor(text)
                 if Scoring.isValidByline(element, matchString: DOMUtils.classAndID(element)) || Utils.looksLikeByline(text) || caps {
@@ -167,9 +175,9 @@ enum MetadataExtractor {
                 }
             }
         }
-        for element in (try? document.select("[class], [id]")) ?? SwiftSoup.Elements() {
+        for element in try document.select("[class], [id]") {
             guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element), elementHasBylineKeyword(element) else { continue }
-            let text = cleanedCandidateText(element)
+            let text = try cleanedCandidateText(element)
             guard !text.isEmpty, text.utf8.count <= 120 else { continue }
             if Scoring.isValidByline(element, matchString: DOMUtils.classAndID(element)) || Utils.looksLikeByline(text) || looksLikeCapsAuthor(text) {
                 guard let value = Utils.cleanBylineText(text) else { continue }
@@ -178,9 +186,9 @@ enum MetadataExtractor {
                 fallback = fallback ?? candidate
             }
         }
-        for element in (try? document.select("address")) ?? SwiftSoup.Elements() {
+        for element in try document.select("address") {
             guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element) else { continue }
-            let text = cleanedCandidateText(element)
+            let text = try cleanedCandidateText(element)
             if text.utf8.count <= 100 && (Utils.looksLikeByline(text) || Scoring.isValidByline(element, matchString: text) || looksLikeCapsAuthor(text)) {
                 guard let value = Utils.cleanBylineText(text) else { continue }
                 let candidate = DOMBylineCandidate(text: value, highConfidence: false)
@@ -188,9 +196,9 @@ enum MetadataExtractor {
                 fallback = fallback ?? candidate
             }
         }
-        for element in (try? document.select("p,div,span")) ?? SwiftSoup.Elements() {
+        for element in try document.select("p,div,span") {
             guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element) else { continue }
-            let text = cleanedCandidateText(element)
+            let text = try cleanedCandidateText(element)
             guard text.utf8.count <= 120, Utils.looksLikeByline(text) || looksLikeCapsAuthor(text) else { continue }
             if !looksLikeDateline(text) {
                 let cleaned = Utils.cleanBylineTextWithReason(text)
@@ -201,49 +209,50 @@ enum MetadataExtractor {
         return fallback ?? nil
     }
 
-    private static func bylineCandidate(_ element: Element, explicit: Bool) -> String? {
+    private static func bylineCandidate(_ element: Element, explicit: Bool) throws -> String? {
         guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element) else { return nil }
-        if let parent = element.parent(), elementHasBylineKeyword(parent), !isIgnorableBylineContext(parent), let value = Utils.cleanBylineText(cleanedCandidateText(parent)) { return value }
-        let text = cleanedCandidateText(element)
+        if let parent = element.parent(), elementHasBylineKeyword(parent), !isIgnorableBylineContext(parent), let value = Utils.cleanBylineText(try cleanedCandidateText(parent)) { return value }
+        let text = try cleanedCandidateText(element)
         guard !text.isEmpty else { return nil }
         let match = DOMUtils.classAndID(element)
         guard explicit || Scoring.isValidByline(element, matchString: match) else { return nil }
         return Utils.cleanBylineText(text)
     }
 
-    private static func isDroppedOrganizationByline(_ element: Element) -> Bool {
+    private static func isDroppedOrganizationByline(_ element: Element) throws -> Bool {
         let target = element.parent().flatMap { elementHasBylineKeyword($0) ? $0 : nil } ?? element
-        if case .droppedOrganization = Utils.cleanBylineTextWithReason(cleanedCandidateText(target)) { return true }
+        if case .droppedOrganization = Utils.cleanBylineTextWithReason(try cleanedCandidateText(target)) { return true }
         return false
     }
 
-    private static func cleanedCandidateText(_ element: Element) -> String {
+    private static func cleanedCandidateText(_ element: Element) throws -> String {
         let raw = buildBylineText(element)
-        let names = childAuthorNames(element)
+        let names = try childAuthorNames(element)
         let normalized = raw.trimmed()
-        if !names.isEmpty && shouldPreferChildNames(element, names: names, raw: raw) {
+        let prefersChildNames = names.isEmpty ? false : try shouldPreferChildNames(element, names: names, raw: raw)
+        if prefersChildNames {
             return unique(names).joined(separator: ", ")
         }
         return normalized
     }
 
-    private static func childAuthorNames(_ element: Element) -> [String] {
+    private static func childAuthorNames(_ element: Element) throws -> [String] {
         var names: [String] = []
-        names.append(contentsOf: ((try? element.select("[itemprop=name], [itemprop~=name]")) ?? SwiftSoup.Elements())
+        names.append(contentsOf: (try element.select("[itemprop=name], [itemprop~=name]"))
             .map { DOMUtils.getInnerText($0).trimmed() }
             .filter { !$0.isEmpty })
 
-        for anchor in (try? element.select("a")) ?? SwiftSoup.Elements() {
+        for anchor in try element.select("a") {
             let name = DOMUtils.getInnerText(anchor).trimmed()
             guard !name.isEmpty, Utils.looksLikeAuthorName(name) else { continue }
-            let href = ((try? anchor.attr("href")) ?? "").lowercased()
+            let href = DOMUtils.attribute("href", of: anchor).lowercased()
             guard !href.hasPrefix("mailto:"), !href.contains("twitter.com"), !href.contains("facebook.com"), !href.contains("linkedin.com") else { continue }
             names.append(name)
         }
         return unique(names)
     }
 
-    private static func shouldPreferChildNames(_ element: Element, names: [String], raw: String) -> Bool {
+    private static func shouldPreferChildNames(_ element: Element, names: [String], raw: String) throws -> Bool {
         guard !names.isEmpty else { return false }
         let authorish = ["authorinfo", "author-info"]
         if DOMUtils.ancestors(element, limit: 4).contains(where: { ancestor in
@@ -253,7 +262,7 @@ enum MetadataExtractor {
 
         let marker = DOMUtils.classAndID(element).lowercased()
         if authorish.contains(where: marker.contains) { return true }
-        let section = (try? element.attr("section"))?.lowercased() ?? ""
+        let section = DOMUtils.attribute("section", of: element).lowercased()
         if section.contains("author") { return true }
 
         var normalized = raw.lowercased()
@@ -270,8 +279,11 @@ enum MetadataExtractor {
         if tokens.isEmpty { return true }
         let jobKeywords = ["reporter", "editor", "writer", "staff", "senior", "technologist", "correspondent", "columnist", "analyst", "producer", "anchor", "bureau", "desk", "spokesman", "spokeswoman", "spokesperson", "contributor", "team", "author"]
         if tokens.contains(where: jobKeywords.contains) { return true }
-        let semanticName = ((try? element.attr("itemprop")) ?? "").split(whereSeparator: { $0.isWhitespace }).contains { $0.lowercased() == "name" }
-            || (try? element.select("[itemprop='name'], [itemprop~=name]").isEmpty == false) == true
+        let semanticNameAttribute = DOMUtils.attribute("itemprop", of: element)
+            .split(whereSeparator: { $0.isWhitespace })
+            .contains { $0.lowercased() == "name" }
+        let semanticNameChild = try !element.select("[itemprop='name'], [itemprop~=name]").isEmpty()
+        let semanticName = semanticNameAttribute || semanticNameChild
         return semanticName && tokens.allSatisfy { $0 == "by" }
     }
 
@@ -320,11 +332,12 @@ enum MetadataExtractor {
     }
 
     private static func stripIntermediateNewline(_ text: String) -> String {
-        let characters = Array(text)
-        var index = 0
-        while index < characters.count && characters[index].isWhitespace && characters[index] != "\n" { index += 1 }
-        guard index < characters.count, characters[index] == "\n" else { return text }
-        return String(characters[..<index]) + String(characters[(index + 1)...])
+        var index = text.startIndex
+        while index < text.endIndex, text[index].isWhitespace, text[index] != "\n" {
+            text.formIndex(after: &index)
+        }
+        guard index < text.endIndex, text[index] == "\n" else { return text }
+        return String(text[..<index]) + String(text[text.index(after: index)...])
     }
 
     private static func unique(_ values: [String]) -> [String] {
@@ -333,10 +346,10 @@ enum MetadataExtractor {
         return result
     }
 
-    private static func findStandfirstByline(in document: Document) -> String? {
-        for element in (try? document.select("em.byline, [class*=byline]")) ?? SwiftSoup.Elements() {
+    private static func findStandfirstByline(in document: Document) throws -> String? {
+        for element in try document.select("em.byline, [class*=byline]") {
             guard DOMUtils.ancestors(element, limit: 5).contains(where: { DOMUtils.classAndID($0).lowercased().contains("standfirst") }) else { continue }
-            let text = cleanedCandidateText(element)
+            let text = try cleanedCandidateText(element)
             if looksLikeCapsAuthor(text) { return Utils.cleanBylineText(text) }
         }
         return nil
@@ -410,13 +423,6 @@ enum MetadataExtractor {
                 return !value.allSatisfy(\.isNumber) && !["by", "updated", "at", "am", "pm"].contains(value) && !months.contains(value)
             }
         return !ignored.isEmpty
-    }
-
-    private static func hasExplicitBylineMarker(in document: Document) -> Bool {
-        for selector in ["[rel=author]", "[itemprop~=author]"] {
-            if let elements = try? document.select(selector), !elements.isEmpty() { return true }
-        }
-        return false
     }
 
     private static func jsonDictionaries(from object: Any) -> [[String: Any]] {
@@ -494,8 +500,8 @@ enum MetadataExtractor {
         return value
     }
 
-    private static func extractTitleFromDocument(_ document: Document) -> String? {
-        guard let original = nonEmpty(try? document.title())?.trimmed(), !original.isEmpty else { return nil }
+    private static func extractTitleFromDocument(_ document: Document) throws -> String? {
+        guard let original = nonEmpty(try document.title())?.trimmed(), !original.isEmpty else { return nil }
         var current = original
         let separator = #/\s(?:\||-|–|—|\\|/|>|»)\s/#
         let separatorMatches = original.matches(of: separator)
@@ -509,7 +515,7 @@ enum MetadataExtractor {
                 }
             }
         } else if current.contains(": ") {
-            let headingMatches = ((try? document.select("h1,h2")) ?? SwiftSoup.Elements()).map { DOMUtils.getInnerText($0) }
+            let headingMatches = (try document.select("h1,h2")).map { DOMUtils.getInnerText($0) }
             if !headingMatches.contains(where: { $0 == current }) {
                 if let colon = current.lastIndex(of: ":") {
                     let suffix = String(current[current.index(after: colon)...]).trimmed()
@@ -522,7 +528,7 @@ enum MetadataExtractor {
                 }
             }
         } else if current.count > 150 || current.count < 15 {
-            let headings = (try? document.select("h1")) ?? SwiftSoup.Elements()
+            let headings = try document.select("h1")
             if headings.count == 1 { current = DOMUtils.getInnerText(headings[0]) }
         }
         current = Utils.normalizeWhitespace(current)

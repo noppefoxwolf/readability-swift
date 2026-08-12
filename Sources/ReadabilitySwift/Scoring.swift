@@ -5,7 +5,7 @@ enum Scoring {
         guard flags.contains(.weightClasses) else { return 0 }
         var weight = 0
         for attribute in ["class", "id"] {
-            let value = ((try? element.attr(attribute)) ?? "").lowercased()
+            let value = DOMUtils.attribute(attribute, of: element).lowercased()
             guard !value.isEmpty else { continue }
             if matches(value, Constants.negative) {
                 weight -= 25
@@ -30,7 +30,7 @@ enum Scoring {
         return score + Double(getClassWeight(element, flags: flags))
     }
 
-    static func calculateContentScore(_ element: Element, linkDensityModifier: Double) -> Double {
+    static func calculateContentScore(_ element: Element, linkDensityModifier: Double) throws -> Double {
         let text = DOMUtils.getInnerText(element, normalizeSpaces: false)
         // readabilityrs scores Rust str::len() values, which are UTF-8 bytes.
         // String.count would change thresholds for non-ASCII articles.
@@ -38,17 +38,17 @@ enum Scoring {
         let commaCount = text.filter { ",،﹐､，；;⸲⹁⸴⹉⹌".contains($0) }.count
         var score = 1.0 + Double(commaCount)
         score += min(Double(text.utf8.count) / 100.0, 3.0)
-        score *= 1.0 - DOMUtils.linkDensity(element) + linkDensityModifier
+        score *= 1.0 - (try DOMUtils.linkDensity(element)) + linkDensityModifier
         return score
     }
 
-    static func getContentScore(_ element: Element, linkDensityModifier: Double = 0) -> Double {
-        initializeNodeScore(element, flags: [.weightClasses]) + calculateContentScore(element, linkDensityModifier: linkDensityModifier)
+    static func getContentScore(_ element: Element, linkDensityModifier: Double = 0) throws -> Double {
+        try initializeNodeScore(element, flags: [.weightClasses]) + calculateContentScore(element, linkDensityModifier: linkDensityModifier)
     }
 
     static func isValidByline(_ element: Element, matchString: String) -> Bool {
-        let rel = ((try? element.attr("rel")) ?? "").lowercased()
-        let itemprop = ((try? element.attr("itemprop")) ?? "").lowercased()
+        let rel = DOMUtils.attribute("rel", of: element).lowercased()
+        let itemprop = DOMUtils.attribute("itemprop", of: element).lowercased()
         let length = DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count
         return (rel == "author" || itemprop.contains("author") || matches(matchString, Constants.byline)) && length > 0 && length < 100
     }

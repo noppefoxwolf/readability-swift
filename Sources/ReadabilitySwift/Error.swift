@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ReadabilityError: Error, Equatable, LocalizedError {
+public enum ReadabilityError: Error, Equatable, LocalizedError, Sendable {
     case parsingFailed(String)
     case invalidURL(String)
     case maxElementsExceeded(Int)
@@ -15,5 +15,3 @@ public enum ReadabilityError: Error, Equatable, LocalizedError {
         }
     }
 }
-
-public typealias ReadabilityResult<Value> = Swift.Result<Value, ReadabilityError>

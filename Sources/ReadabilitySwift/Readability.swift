@@ -1,16 +1,13 @@
 import Foundation
-import SwiftSoup
 
 /// Main Readability parser. It follows the same preprocessing, extraction,
 /// metadata, and post-processing stages as readabilityrs.
-public final class Readability {
-    private let document: Document
+public struct Readability {
     private let html: String
     private let baseURL: URL?
     public let options: ReadabilityOptions
 
     public init(_ html: String, baseURL: URL? = nil, options: ReadabilityOptions = .init()) throws {
-        self.document = try DOMUtils.parse(html)
         self.html = html
         // readabilityrs accepts a raw string and validates it with url::Url.
         // This API accepts an already-parsed Foundation.URL, so the remaining
@@ -22,75 +19,85 @@ public final class Readability {
         self.options = options
     }
 
+    public static func parse(
+        _ html: String,
+        baseURL: URL? = nil,
+        options: ReadabilityOptions = .init()
+    ) throws -> Article {
+        try Readability(html, baseURL: baseURL, options: options).parse()
+    }
+
     public func parse() throws -> Article {
-        let jsonLD = options.disableJSONLD ? Metadata() : MetadataExtractor.getJSONLD(document)
-        let metadata = MetadataExtractor.getArticleMetadata(document, jsonLD: jsonLD)
+        let baseURI = baseURL?.absoluteString
+        let document = try DOMUtils.parse(html, baseURI: baseURI)
+        let jsonLD: Metadata
+        if options.extractsJSONLD {
+            jsonLD = try MetadataExtractor.getJSONLD(document)
+        } else {
+            jsonLD = Metadata()
+        }
+        let metadata = try MetadataExtractor.getArticleMetadata(document, jsonLD: jsonLD)
 
         let preprocessedHTML = Cleaner.prepDocument(html)
-        guard let preprocessedDocument = try? DOMUtils.parse(preprocessedHTML) else {
-            throw ReadabilityError.parsingFailed("Unable to parse the preprocessed HTML")
-        }
-        Cleaner.removeUnsafeElements(from: preprocessedDocument)
-        let extraction = ContentExtractor.grabArticle(preprocessedDocument, options: options)
-        let extracted: String
-        // readabilityrs flattens extraction errors and no-content into None.
-        // The Swift API is throwing, so preserve both states as typed errors
-        // instead of silently returning an optional Article.
-        switch extraction {
-        case let .success(value?):
-            extracted = value
-        case .success(nil):
+        let preprocessedDocument = try DOMUtils.parse(preprocessedHTML, baseURI: baseURI)
+        try Cleaner.removeUnsafeElements(from: preprocessedDocument)
+        guard let extracted = try ContentExtractor.grabArticle(
+            preprocessedDocument,
+            options: options,
+            resolvesRelativeURLs: baseURL != nil
+        ) else {
             throw ReadabilityError.noContentFound
-        case let .failure(error):
-            throw error
         }
 
-        let lightHTML: String
-        switch Cleaner.cleanArticleContentLight(extracted) {
-        case let .success(value): lightHTML = value
-        case let .failure(error): throw error
-        }
+        let lightHTML = try Cleaner.cleanArticleContentLight(extracted)
         var preparedHTML = PostProcessor.prepArticle(
             lightHTML,
-            cleanStyles: options.cleanStyles,
-            cleanWhitespace: options.cleanWhitespace,
-            keepClasses: options.keepClasses,
-            classesToPreserve: options.classesToPreserve
+            cleanStyles: options.cleansStyles,
+            cleanWhitespace: options.cleansWhitespace
         )
-        let extractedTitle = metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? titleFromContent(extracted)
-        if options.removeTitleFromContent, let title = extractedTitle {
-            preparedHTML = PostProcessor.removeTitleFromContent(preparedHTML, title: title)
+        let metadataTitle = metadata.title.flatMap { $0.isEmpty ? nil : $0 }
+        let extractedTitle: String?
+        if let metadataTitle {
+            extractedTitle = metadataTitle
+        } else {
+            extractedTitle = try titleFromContent(extracted)
         }
-        let cleanedHTML: String
-        switch Cleaner.cleanArticleContent(
+        if options.removesTitleFromContent, let title = extractedTitle {
+            preparedHTML = try PostProcessor.removeTitleFromContent(preparedHTML, title: title)
+        }
+        let cleanedHTML = try Cleaner.cleanArticleContent(
             preparedHTML,
             allowedVideoRegex: options.allowedVideoRegex
-        ) {
-        case let .success(value): cleanedHTML = value
-        case let .failure(error): throw error
-        }
+        )
 
-        let text = extractText(from: cleanedHTML)
+        let text = try extractText(from: cleanedHTML)
         guard !text.isEmpty else { throw ReadabilityError.noContentFound }
-        let titleValue = extractedTitle ?? titleFromContent(cleanedHTML) ?? ""
-        let title: String? = titleValue
-        let cleanedExcerpt = firstParagraph(from: cleanedHTML)
-        let excerpt = metadata.excerpt
-            ?? cleanedExcerpt.flatMap { paragraphPreservingSourceWhitespace($0, in: extracted) } ?? cleanedExcerpt
-            ?? excerptFromText(text)
-        var markdownOptions = options.markdownOptions ?? MarkdownOptions()
-        markdownOptions.sanitizeURLs = options.sanitizeContent
-        let markdown = options.outputMarkdown ? MarkdownConverter.htmlToMarkdown(cleanedHTML, options: markdownOptions, title: metadata.title) : nil
+        let title: String?
+        if let extractedTitle {
+            title = extractedTitle
+        } else {
+            title = try titleFromContent(cleanedHTML)
+        }
+        let cleanedExcerpt = try firstParagraph(from: cleanedHTML)
+        let sourceExcerpt: String?
+        if let cleanedExcerpt {
+            sourceExcerpt = try paragraphPreservingSourceWhitespace(cleanedExcerpt, in: extracted)
+        } else {
+            sourceExcerpt = nil
+        }
+        let excerpt = metadata.excerpt ?? sourceExcerpt ?? cleanedExcerpt ?? excerptFromText(text)
+        let markdown = try options.markdown.map {
+            try MarkdownConverter.htmlToMarkdown(cleanedHTML, options: $0, title: metadata.title)
+        }
+        let finalHTML = try PostProcessor.applyClassPolicy(options.classPolicy, to: cleanedHTML)
         return Article(
             title: title,
-            content: cleanedHTML,
+            content: finalHTML,
             textContent: text,
-            // readabilityrs exposes Rust str::len(), i.e. UTF-8 bytes.
-            length: text.utf8.count,
             excerpt: excerpt,
             byline: metadata.byline,
             image: metadata.image,
-            dir: DOMUtils.articleDirection(document) ?? metadata.dir,
+            dir: try DOMUtils.articleDirection(document) ?? metadata.dir,
             siteName: metadata.siteName,
             lang: metadata.lang,
             publishedTime: metadata.publishedTime,
@@ -99,40 +106,35 @@ public final class Readability {
         )
     }
 
-    private func extractText(from html: String) -> String {
-        guard let document = try? DOMUtils.parse(html), let body = document.body() else { return "" }
-        return rawText(from: body)
+    private func extractText(from html: String) throws -> String {
+        let document = try DOMUtils.parse(html)
+        guard let body = document.body() else { return "" }
+        return DOMUtils.textContent(body)
     }
 
-    private func rawText(from element: Element) -> String {
-        element.getChildNodes().reduce(into: "") { result, node in
-            if let text = node as? TextNode { result += text.getWholeText() }
-            else if let child = node as? Element { result += rawText(from: child) }
-        }
-    }
-
-    private func titleFromContent(_ html: String) -> String? {
-        guard let document = try? DOMUtils.parse(html), let elements = try? document.select("h1,h2"), let title = elements.first() else { return nil }
+    private func titleFromContent(_ html: String) throws -> String? {
+        let document = try DOMUtils.parse(html)
+        guard let title = try document.select("h1,h2").first() else { return nil }
         let value = DOMUtils.normalizeWhitespace(DOMUtils.textContent(title))
         return value.isEmpty ? nil : value
     }
 
-    private func firstParagraph(from html: String) -> String? {
-        guard let document = try? DOMUtils.parse(html) else { return nil }
-        guard let elements = try? document.select("p") else { return nil }
+    private func firstParagraph(from html: String) throws -> String? {
+        let document = try DOMUtils.parse(html)
+        let elements = try document.select("p")
         for element in elements {
-            let value = rawText(from: element).trimmed()
+            let value = DOMUtils.textContent(element).trimmed()
             guard value.utf8.count >= 25 else { continue }
             guard !Utils.looksLikeBracketMenu(value) else { continue }
 
-            let className = ((try? element.attr("class")) ?? "").lowercased()
-            let idName = ((try? element.attr("id")) ?? "").lowercased()
+            let className = DOMUtils.attribute("class", of: element).lowercased()
+            let idName = DOMUtils.attribute("id", of: element).lowercased()
             let noiseClassNames = ["hatnote", "shortdescription", "metadata", "navbox", "dablink", "noprint", "mwe-math-element", "mw-empty-elt"]
             if noiseClassNames.contains(where: { className.contains($0) || idName.contains($0) }) { continue }
-            if ((try? element.attr("role")) ?? "").lowercased() == "note" { continue }
+            if DOMUtils.attribute("role", of: element).lowercased() == "note" { continue }
             let lower = value.lowercased()
             if ["see also", "coordinates", "navigation menu", "external links", "further reading"].contains(where: { lower.hasPrefix($0) }) { continue }
-            if DOMUtils.linkDensity(element) > 0.8 { continue }
+            if try DOMUtils.linkDensity(element) > 0.8 { continue }
             if Utils.looksLikeByline(value) || className.contains("byline") || className.contains("author") || idName.contains("byline") || idName.contains("author") { continue }
             return value
         }
@@ -151,11 +153,12 @@ public final class Readability {
         return truncateText(cleaned, maximumLength: 300)
     }
 
-    private func paragraphPreservingSourceWhitespace(_ excerpt: String, in html: String) -> String? {
-        guard let document = try? DOMUtils.parse(html), let elements = try? document.select("p") else { return nil }
+    private func paragraphPreservingSourceWhitespace(_ excerpt: String, in html: String) throws -> String? {
+        let document = try DOMUtils.parse(html)
+        let elements = try document.select("p")
         let normalizedExcerpt = excerpt.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         for element in elements {
-            let value = rawText(from: element).trimmed()
+            let value = DOMUtils.textContent(element).trimmed()
             let normalizedValue = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
             if normalizedValue == normalizedExcerpt {
                 return value.replacing(/\n[ \t]+/, with: "\n ")
@@ -165,11 +168,11 @@ public final class Readability {
     }
 
     private func truncateText(_ text: String, maximumLength: Int) -> String {
-        let characters = Array(text)
-        guard characters.count > maximumLength else { return text }
-        let prefix = String(characters.prefix(maximumLength))
-        guard let boundary = prefix.lastIndex(where: { $0.isWhitespace }) else { return prefix.trimmed() }
-        return String(prefix[..<boundary]).trimmed()
+        guard let end = text.index(text.startIndex, offsetBy: maximumLength, limitedBy: text.endIndex),
+              end < text.endIndex else { return text }
+        let prefix = text[..<end]
+        guard let boundary = prefix.lastIndex(where: \.isWhitespace) else { return prefix.trimmed() }
+        return prefix[..<boundary].trimmed()
     }
 
 }

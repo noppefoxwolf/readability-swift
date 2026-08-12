@@ -1,45 +1,49 @@
 import SwiftSoup
 
 enum ElementCodeBlocks {
-    static func standardize(_ html: String) -> String {
+    static func standardize(_ html: String) throws -> String {
         // readabilityrs parses a fragment and uses ElementRef::html() for the
         // selected element. SwiftSoup builds a document shell, and its html()
         // means inner HTML, so traverse body and capture outerHtml() instead.
-        guard let document = try? SwiftSoup.parse(html), let body = document.body() else { return html }
+        let document = try SwiftSoup.parse(html)
+        guard let body = document.body() else { return html }
         var replacements: [(String, String)] = []
 
-        for figure in (try? body.select("figure[data-rehype-pretty-code-figure]")) ?? SwiftSoup.Elements() {
-            if let pre = try? figure.select("pre").first() {
-                let language = detectLanguage(pre)
-                replacements.append(((try? figure.outerHtml()) ?? "", canonical(language: language, code: cleanCode(rawText(pre)))))
+        for figure in try body.select("figure[data-rehype-pretty-code-figure]") {
+            if let pre = try figure.select("pre").first() {
+                let language = try detectLanguage(pre)
+                replacements.append((try figure.outerHtml(), canonical(language: language, code: cleanCode(DOMUtils.textContent(pre)))))
             }
         }
 
-        for highlight in (try? body.select("div.highlight")) ?? SwiftSoup.Elements() {
-            let language = detectLanguage(from: (try? highlight.attr("class")) ?? "") ?? ""
-            if let pre = try? highlight.select("pre").first() {
-                replacements.append(((try? highlight.outerHtml()) ?? "", canonical(language: language, code: cleanCode(rawText(pre)))))
+        for highlight in try body.select("div.highlight") {
+            let language = detectLanguage(from: DOMUtils.attribute("class", of: highlight)) ?? ""
+            if let pre = try highlight.select("pre").first() {
+                replacements.append((try highlight.outerHtml(), canonical(language: language, code: cleanCode(DOMUtils.textContent(pre)))))
             }
         }
 
-        for table in (try? body.select("table.highlight-table, table.rouge-table, table.code-listing")) ?? SwiftSoup.Elements() {
-            let cells = (try? table.select("td")) ?? SwiftSoup.Elements()
-            guard let cell = cells.first(where: { ((try? $0.attr("class")) ?? "").contains("code") || ((try? $0.attr("class")) ?? "").contains("rouge-code") }) ?? cells.last else { continue }
-            replacements.append(((try? table.outerHtml()) ?? "", canonical(language: detectLanguage(table), code: cleanCode(rawText(cell)))))
+        for table in try body.select("table.highlight-table, table.rouge-table, table.code-listing") {
+            let cells = try table.select("td")
+            guard let cell = cells.first(where: {
+                let className = DOMUtils.attribute("class", of: $0)
+                return className.contains("code") || className.contains("rouge-code")
+            }) ?? cells.last else { continue }
+            replacements.append((try table.outerHtml(), canonical(language: try detectLanguage(table), code: cleanCode(DOMUtils.textContent(cell)))))
         }
 
-        for shiki in (try? body.select("pre.shiki")) ?? SwiftSoup.Elements() {
-            let language = detectLanguage(shiki)
-            let lines = ((try? shiki.select("code span.line")) ?? SwiftSoup.Elements()).map(rawText)
-            let code = lines.isEmpty ? rawText(shiki) : lines.joined(separator: "\n")
-            replacements.append(((try? shiki.outerHtml()) ?? "", canonical(language: language, code: cleanCode(code))))
+        for shiki in try body.select("pre.shiki") {
+            let language = try detectLanguage(shiki)
+            let lines = (try shiki.select("code span.line")).map(DOMUtils.textContent)
+            let code = lines.isEmpty ? DOMUtils.textContent(shiki) : lines.joined(separator: "\n")
+            replacements.append((try shiki.outerHtml(), canonical(language: language, code: cleanCode(code))))
         }
 
-        for pre in (try? body.select("pre")) ?? SwiftSoup.Elements() {
-            let original = (try? pre.outerHtml()) ?? ""
+        for pre in try body.select("pre") {
+            let original = try pre.outerHtml()
             guard !replacements.contains(where: { $0.0.contains(original) }) else { continue }
-            let language = detectLanguage(pre)
-            replacements.append((original, canonical(language: language, code: cleanCode(rawText(pre)))))
+            let language = try detectLanguage(pre)
+            replacements.append((original, canonical(language: language, code: cleanCode(DOMUtils.textContent(pre)))))
         }
 
         var result = html
@@ -50,15 +54,18 @@ enum ElementCodeBlocks {
         return result
     }
 
-    static func standardizeCodeBlocks(_ html: String) -> String { standardize(html) }
+    static func standardizeCodeBlocks(_ html: String) throws -> String { try standardize(html) }
 
-    private static func detectLanguage(_ element: Element) -> String {
-        if let value = try? element.attr("data-lang"), !value.isEmpty { return ElementLanguages.normalizeLanguage(value) }
-        if let value = try? element.attr("data-language"), !value.isEmpty { return ElementLanguages.normalizeLanguage(value) }
-        if let language = detectLanguage(from: (try? element.attr("class")) ?? "") { return language }
-        if let code = try? element.select("code").first() {
-            if let language = detectLanguage(from: (try? code.attr("class")) ?? "") { return language }
-            if let value = try? code.attr("data-lang"), !value.isEmpty { return ElementLanguages.normalizeLanguage(value) }
+    private static func detectLanguage(_ element: Element) throws -> String {
+        let dataLanguage = DOMUtils.attribute("data-lang", of: element)
+        if !dataLanguage.isEmpty { return ElementLanguages.normalizeLanguage(dataLanguage) }
+        let alternateDataLanguage = DOMUtils.attribute("data-language", of: element)
+        if !alternateDataLanguage.isEmpty { return ElementLanguages.normalizeLanguage(alternateDataLanguage) }
+        if let language = detectLanguage(from: DOMUtils.attribute("class", of: element)) { return language }
+        if let code = try element.select("code").first() {
+            if let language = detectLanguage(from: DOMUtils.attribute("class", of: code)) { return language }
+            let codeLanguage = DOMUtils.attribute("data-lang", of: code)
+            if !codeLanguage.isEmpty { return ElementLanguages.normalizeLanguage(codeLanguage) }
         }
         return ""
     }
@@ -78,13 +85,6 @@ enum ElementCodeBlocks {
             return ElementLanguages.normalizeLanguage(String(token))
         }
         return nil
-    }
-
-    private static func rawText(_ element: Element) -> String {
-        element.getChildNodes().reduce(into: "") { result, node in
-            if let text = node as? TextNode { result += text.getWholeText() }
-            else if let child = node as? Element { result += rawText(child) }
-        }
     }
 
     private static func cleanCode(_ value: String) -> String {

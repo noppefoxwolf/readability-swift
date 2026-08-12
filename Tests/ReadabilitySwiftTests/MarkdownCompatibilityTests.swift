@@ -19,7 +19,7 @@ import Testing
     for directory in directories {
         let name = directory.lastPathComponent
         let html = try String(contentsOf: directory.appendingPathComponent("expected.html"), encoding: .utf8)
-        let markdown = Markdown.convert(html: html)
+        let markdown = try Markdown.convert(html)
         failures += markdownQualityFailures(markdown, caseName: name)
     }
 

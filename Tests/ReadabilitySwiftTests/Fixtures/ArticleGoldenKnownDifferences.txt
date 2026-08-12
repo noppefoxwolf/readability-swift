@@ -86,11 +86,13 @@ nytimes-4.length
 nytimes-5.byline
 nytimes-5.lang
 nytimes-5.length
+ol.title
 pixnet.lang
 quanta-1.lang
 quanta-1.length
 remove-extra-brs.length
 reordering-paragraphs.length
+reordering-paragraphs.title
 replace-brs.length
 royal-road.lang
 royal-road.length

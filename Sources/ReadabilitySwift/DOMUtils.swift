@@ -1,9 +1,9 @@
 import SwiftSoup
 
 enum DOMUtils {
-    static func parse(_ html: String) throws -> Document {
+    static func parse(_ html: String, baseURI: String? = nil) throws -> Document {
         do {
-            let document = try SwiftSoup.parse(html)
+            let document = try SwiftSoup.parse(html, baseURI ?? "")
             // SwiftSoup pretty-prints by default and can therefore introduce
             // text-node whitespace that scraper/html5ever does not synthesize.
             // Extraction scores and Markdown goldens observe that whitespace.
@@ -29,17 +29,28 @@ enum DOMUtils {
         element.ownText()
     }
 
+    static func attribute(_ name: String, of element: Element) -> String {
+        do {
+            return try element.attr(name)
+        } catch {
+            assertionFailure("Invalid static HTML attribute name '\(name)': \(error)")
+            return ""
+        }
+    }
+
     static func classAndID(_ element: Element) -> String {
-        let className = (try? element.attr("class")) ?? ""
-        let id = (try? element.attr("id")) ?? ""
+        let className = attribute("class", of: element)
+        let id = attribute("id", of: element)
         return "\(className) \(id)".trimmed()
     }
 
-    static func linkDensity(_ element: Element) -> Double {
+    static func linkDensity(_ element: Element) throws -> Double {
         let text = getInnerText(element, normalizeSpaces: false)
-        guard !text.isEmpty, let links = try? element.select("a"), !links.isEmpty() else { return 0 }
-        let linkText = links.reduce(into: 0.0) { total, link in
-            let href = (try? link.attr("href")) ?? ""
+        guard !text.isEmpty else { return 0 }
+        let links = try element.select("a")
+        guard !links.isEmpty() else { return 0 }
+        let linkText = try links.reduce(into: 0.0) { total, link in
+            let href = try link.attr("href")
             // readabilityrs discounts hash-only anchors because they are
             // usually in-page navigation rather than article links.
             total += Double(getInnerText(link, normalizeSpaces: false).utf8.count) * (href.hasPrefix("#") && href.count > 1 ? 0.3 : 1.0)
@@ -47,8 +58,8 @@ enum DOMUtils {
         return linkText / Double(text.utf8.count)
     }
 
-    static func descendants(_ element: Element) -> [Element] {
-        Array((try? element.select("*")) ?? SwiftSoup.Elements())
+    static func descendants(_ element: Element) throws -> [Element] {
+        Array(try element.select("*"))
     }
 
     static func ancestors(_ element: Element, limit: Int = 5) -> [Element] {
@@ -78,18 +89,19 @@ enum DOMUtils {
         var current: Element? = element
         while let node = current {
             if node.hasAttr("hidden") { return false }
-            let ariaHidden = ((try? node.attr("aria-hidden")) ?? "").lowercased()
-            if ariaHidden == "true" && !classAndID(node).lowercased().contains("fallback-image") { return false }
-            let style = ((try? node.attr("style")) ?? "").lowercased()
+            let ariaHidden = attribute("aria-hidden", of: node).lowercased()
+            let isFallbackImage = classAndID(node).lowercased().contains("fallback-image")
+            if ariaHidden == "true" && !isFallbackImage { return false }
+            let style = attribute("style", of: node).lowercased()
             if style.contains("display:none") || style.contains("display: none") || style.contains("visibility:hidden") || style.contains("visibility: hidden") { return false }
             current = node.parent()
         }
         return true
     }
 
-    static func articleDirection(_ document: Document) -> String? {
-        guard let html = (try? document.select("html"))?.first else { return nil }
-        let value = ((try? html.attr("dir")) ?? "").trimmed().lowercased()
+    static func articleDirection(_ document: Document) throws -> String? {
+        guard let html = try document.select("html").first else { return nil }
+        let value = try html.attr("dir").trimmed().lowercased()
         return ["ltr", "rtl", "auto"].contains(value) ? value : nil
     }
 
@@ -97,8 +109,9 @@ enum DOMUtils {
         value.collapsingRepeatedWhitespace()
     }
 
-    static func elementTextLength(_ html: String) -> Int {
-        guard let document = try? parse(html), let body = document.body() else { return 0 }
+    static func elementTextLength(_ html: String) throws -> Int {
+        let document = try parse(html)
+        guard let body = document.body() else { return 0 }
         return getInnerText(body, normalizeSpaces: false).utf8.count
     }
 

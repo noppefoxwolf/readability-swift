@@ -38,7 +38,7 @@ enum ElementImages {
         let src = attribute("src", in: result) ?? ""
         let dataSrc = attribute("data-src", in: result) ?? attribute("data-lazy-src", in: result) ?? ""
         if (src.isEmpty || isPlaceholder(src)) && !dataSrc.isEmpty {
-            if src.isEmpty { result = result.replacingLiteral("<img", with: "<img src=\"\(escape(dataSrc))\"", caseInsensitive: true) }
+            if src.isEmpty { result = result.replacingASCIICaseInsensitive("<img", with: "<img src=\"\(escape(dataSrc))\"") }
             else { result = replaceAttribute("src", old: src, new: dataSrc, in: result) }
         }
         let srcset = attribute("srcset", in: result) ?? ""
@@ -70,9 +70,8 @@ enum ElementImages {
 
     private static func attributeValue(_ name: String, in tag: String) -> AttributeValue? {
         var searchStart = tag.startIndex
-        while let nameRange = tag.firstRange(
+        while let nameRange = tag.firstASCIICaseInsensitiveRange(
             of: name,
-            caseInsensitive: true,
             in: searchStart..<tag.endIndex
         ) {
             let hasAttributeBoundary = nameRange.lowerBound == tag.startIndex

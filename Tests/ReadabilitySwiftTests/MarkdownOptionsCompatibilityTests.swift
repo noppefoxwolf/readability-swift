@@ -2,17 +2,17 @@ import Foundation
 import Testing
 @testable import ReadabilitySwift
 
-@Test func setextHeadingStyleMatchesReadabilityrs() {
-    let markdown = Markdown.convert(
-        html: "<h2>Subtitle</h2>",
+@Test func setextHeadingStyleMatchesReadabilityrs() throws {
+    let markdown = try Markdown.convert(
+        "<h2>Subtitle</h2>",
         options: .init(headingStyle: .setext)
     )
     #expect(markdown == "Subtitle\n--------")
 }
 
-@Test func customMarkdownDelimitersMatchReadabilityrs() {
-    let markdown = Markdown.convert(
-        html: "<p><em>emphasis</em> and <strong>strong</strong></p><ul><li>item</li></ul>",
+@Test func customMarkdownDelimitersMatchReadabilityrs() throws {
+    let markdown = try Markdown.convert(
+        "<p><em>emphasis</em> and <strong>strong</strong></p><ul><li>item</li></ul>",
         options: .init(bulletCharacter: "+", emphasisDelimiter: "_", strongDelimiter: "__")
     )
     #expect(markdown.contains("_emphasis_"))
@@ -20,9 +20,9 @@ import Testing
     #expect(markdown.contains("+ item"))
 }
 
-@Test func customFenceAndReferenceLinksMatchReadabilityrs() {
-    let markdown = Markdown.convert(
-        html: "<pre><code>code</code></pre><p><a href='https://example.com'>Example</a></p>",
+@Test func customFenceAndReferenceLinksMatchReadabilityrs() throws {
+    let markdown = try Markdown.convert(
+        "<pre><code>code</code></pre><p><a href='https://example.com'>Example</a></p>",
         options: .init(codeFence: "~", linkStyle: .reference)
     )
     #expect(markdown.contains("~~~\ncode\n~~~"))
@@ -30,8 +30,8 @@ import Testing
     #expect(markdown.contains("[1]: https://example.com"))
 }
 
-@Test func headingStandardizationUsesArticleTitle() {
-    let matching = MarkdownConverter.htmlToMarkdown(
+@Test func headingStandardizationUsesArticleTitle() throws {
+    let matching = try MarkdownConverter.htmlToMarkdown(
         "<h1>My Title</h1><p>Content</p>",
         options: .init(),
         title: "My Title"
@@ -39,7 +39,7 @@ import Testing
     #expect(!matching.contains("# My Title"))
     #expect(matching.contains("Content"))
 
-    let different = MarkdownConverter.htmlToMarkdown(
+    let different = try MarkdownConverter.htmlToMarkdown(
         "<h1>Other Heading</h1>",
         options: .init(),
         title: "Different Title"
@@ -59,10 +59,10 @@ import Testing
     """
     let article = try Readability(
         html,
-        options: .init(charThreshold: 100, outputMarkdown: true)
+        options: .init(characterThreshold: 100, markdown: .init())
     ).parse()
     let markdown = try #require(article.markdownContent)
-    #expect(article.content != nil)
+    #expect(!article.content.isEmpty)
     #expect(markdown.contains("**test article**"))
     #expect(markdown.contains("*rich formatting*"))
     #expect(markdown.contains("[link](https://example.com)"))
@@ -112,9 +112,9 @@ import Testing
     """
     let article = try Readability(
         html,
-        options: .init(charThreshold: 100, outputMarkdown: true, sanitizeContent: true)
+        options: .init(characterThreshold: 100, markdown: .init(), sanitizesContent: true)
     ).parse()
-    let content = try #require(article.content)
+    let content = article.content
     let markdown = try #require(article.markdownContent)
 
     #expect(!content.contains("onclick"))
@@ -127,12 +127,12 @@ import Testing
     #expect(markdown.contains("[safe](https://example.com)"))
 }
 
-@Test func markdownURLSanitizationIsOptIn() {
+@Test func markdownURLSanitizationIsOptIn() throws {
     let html = "<p><a href='javascript:evil()'>link</a><img src='javascript:evil()' alt='image'></p>"
-    let defaultMarkdown = Markdown.convert(html: html)
+    let defaultMarkdown = try Markdown.convert(html)
     #expect(defaultMarkdown.contains("javascript:"))
 
-    let sanitized = Markdown.convert(html: html, options: .init(sanitizeURLs: true))
+    let sanitized = try Markdown.convert(html, options: .init(sanitizeURLs: true))
     #expect(!sanitized.contains("javascript:"))
     #expect(sanitized == "link")
 }

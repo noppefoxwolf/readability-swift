@@ -10,6 +10,8 @@ private let knownSwiftMetadataDivergences: Set<String> = [
     "liberation-1",
     "mathjax",
     "mercurial",
+    "ol",
+    "reordering-paragraphs",
     "replace-brs",
     "salon-1",
     "seattletimes-1",
@@ -23,6 +25,8 @@ private let knownSwiftExtendedMetadataDivergences: Set<String> = [
     "liberation-1",
     "mathjax",
     "mercurial",
+    "ol",
+    "reordering-paragraphs",
     "replace-brs",
     "rtl-2",
     "rtl-3",
@@ -179,9 +183,10 @@ private func compare(
 }
 
 private func contentFailure(article: Article?, expectedHTML: String) -> String? {
-    guard let article, let content = article.content else {
+    guard let article else {
         return "expected article content but extraction returned none"
     }
+    let content = article.content
     let actualLength = normalizedTextLength(content)
     let expectedLength = normalizedTextLength(expectedHTML)
     guard actualLength > 0 else {

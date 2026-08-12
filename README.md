@@ -66,21 +66,20 @@ let html = """
 """
 
 do {
-    let parser = try Readability(
+    let article = try Readability.parse(
         html,
         baseURL: URL(string: "https://example.com/articles/example")
     )
-    let article = try parser.parse()
 
     print(article.title ?? "Untitled")
-    print(article.textContent ?? "")
-    print(article.content ?? "") // Cleaned HTML
+    print(article.textContent)
+    print(article.content) // Cleaned HTML
 } catch {
     print("Failed to parse the document: \(error)")
 }
 ```
 
-`parse()` throws `ReadabilityError.noContentFound` when no readable content can be extracted. The initializer accepts a typed `URL` base URL.
+`parse()` throws `ReadabilityError.noContentFound` when no readable content can be extracted. Relative links and media URLs are resolved when a typed, absolute `URL` is supplied as `baseURL`.
 
 ## Article fields
 
@@ -91,7 +90,7 @@ The returned `Article` contains the following commonly used values:
 | `title` | Extracted article title |
 | `content` | Cleaned article HTML |
 | `textContent` | Article text with HTML removed |
-| `length` | UTF-8 length of `textContent` |
+| `utf8Length` | Computed UTF-8 byte count of `textContent` |
 | `excerpt` | Short article excerpt |
 | `byline` | Author or byline |
 | `image` | Representative image URL |
@@ -107,20 +106,19 @@ Use `ReadabilityOptions` directly:
 
 ```swift
 let options = ReadabilityOptions(
-    charThreshold: 500,
-    nbTopCandidates: 5,
-    keepClasses: false,
-    disableJSONLD: false,
-    removeTitleFromContent: true,
-    outputMarkdown: true
+    characterThreshold: 500,
+    topCandidateCount: 5,
+    classPolicy: .preserve(["page"]),
+    extractsJSONLD: true,
+    removesTitleFromContent: true,
+    markdown: MarkdownOptions()
 )
 
-let parser = try Readability(html, options: options)
-let article = try parser.parse()
+let article = try Readability.parse(html, options: options)
 let markdown = article.markdownContent
 ```
 
-Available options include candidate limits, character thresholds, class preservation, JSON-LD handling, link-density scoring, title removal, whitespace and style cleanup, and Markdown output.
+Available options include candidate limits, character thresholds, class preservation, JSON-LD handling, link-density scoring, title removal, whitespace and style cleanup, sanitization, and Markdown output. Set `markdown` to `nil` to disable Markdown generation.
 
 ## Readerability detection
 
@@ -128,7 +126,7 @@ For a quick check before running full extraction:
 
 ```swift
 if Readerable.isProbablyReaderable(html) {
-    let article = try Readability(html).parse()
+    let article = try Readability.parse(html)
     // Show reader mode for the extracted article.
 }
 ```
@@ -137,9 +135,9 @@ The detector can be tuned with `ReaderableOptions`:
 
 ```swift
 let options = ReaderableOptions(
-    minContentLength: 140,
-    minScore: 20,
-    maxElemsToParse: 1_000
+    minimumContentLength: 140,
+    minimumScore: 20,
+    maximumElementCount: 1_000
 )
 
 let likelyReadable = Readerable.isProbablyReaderable(html, options: options)
@@ -150,8 +148,8 @@ let likelyReadable = Readerable.isProbablyReaderable(html, options: options)
 Convert HTML directly without running article extraction:
 
 ```swift
-let markdown = Markdown.convert(
-    html: "<h1>Hello</h1><p>This is <strong>important</strong>.</p>"
+let markdown = try Markdown.convert(
+    "<h1>Hello</h1><p>This is <strong>important</strong>.</p>"
 )
 ```
 
@@ -164,10 +162,10 @@ let markdownOptions = MarkdownOptions(
     linkStyle: .reference
 )
 
-let markdown = Markdown.convert(html: html, options: markdownOptions)
+let markdown = try Markdown.convert(html, options: markdownOptions)
 ```
 
-`Elements.standardizeAll(_:)` is also available when vendor-specific HTML patterns need to be normalized before conversion.
+`try Elements.standardizeAll(_:)` is also available when vendor-specific HTML patterns need to be normalized before conversion. Both APIs propagate malformed HTML or selector failures instead of silently treating them as empty content.
 
 ## HTML safety
 

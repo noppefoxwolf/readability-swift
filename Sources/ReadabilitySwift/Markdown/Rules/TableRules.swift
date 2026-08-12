@@ -1,14 +1,14 @@
 import SwiftSoup
 
 enum MarkdownTableRules {
-    static func isComplex(_ table: Element) -> Bool {
-        ((try? table.select("[colspan],[rowspan], table table")) ?? SwiftSoup.Elements()).isEmpty() == false
+    static func isComplex(_ table: Element) throws -> Bool {
+        try table.select("[colspan],[rowspan], table table").isEmpty() == false
     }
 
-    static func isLayout(_ table: Element) -> Bool {
-        guard ((try? table.select("th")) ?? SwiftSoup.Elements()).isEmpty() else { return false }
-        for row in (try? table.select("tr")) ?? SwiftSoup.Elements() {
-            if ((try? row.select("td,th").count) ?? 0) > 1 { return false }
+    static func isLayout(_ table: Element) throws -> Bool {
+        guard try table.select("th").isEmpty() else { return false }
+        for row in try table.select("tr") {
+            if try row.select("td,th").count > 1 { return false }
         }
         return true
     }
