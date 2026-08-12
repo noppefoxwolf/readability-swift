@@ -15,7 +15,8 @@ without environment variables or network access.
 | Core metadata used by readabilityrs (`title`, `byline`, `excerpt`, `siteName`) | 120/130 (92.3%) |
 | Extended metadata (core plus `dir`, `lang`, `publishedTime`) | 116/130 (89.2%) |
 | Article extraction for expected-readerable pages | 122/122 (100.0%) |
-| Extracted text length within readabilityrs's 0.5–2.0× band | 116/122 (95.1%) |
+| Extracted text length within readabilityrs's 0.5–2.0× band | 118/122 (96.7%) |
+| Direct readabilityrs `Article` golden | 176 field differences across 90/130 cases |
 | Default Markdown output byte-for-byte equal to readabilityrs | 105/105 (100.0%) |
 | Markdown quality audit across all Mozilla pages | 130/130 (100.0%) |
 | Preformatted/code whitespace regressions | 7/7 (100.0%) |
@@ -49,21 +50,25 @@ The extended comparison additionally differs on:
 
 ## Known content differences
 
-Six expected-readerable pages fall outside the coarse length band:
+Four expected-readerable pages fall outside the coarse length band:
 
 | Case | Swift text length | Mozilla expected | Observation |
 | --- | ---: | ---: | --- |
-| `archive-of-our-own` | 74,442 | 22,245 | Over-extraction |
-| `bug-1255978` | 0 | 4,152 | Whitespace-only extraction; highest-priority remaining defect |
-| `heise` | 4,618 | 1,750 | Over-extraction |
+| `archive-of-our-own` | 74,218 | 22,245 | Over-extraction |
+| `bug-1255978` | 19,904 | 4,152 | No longer empty; close to readabilityrs's 20,301-character output |
 | `hukumusume` | 438 | 920 | Slightly below the lower bound |
-| `yahoo-3` | 9,030 | 2,844 | Over-extraction |
-| `yahoo-4` | 10,466 | 1,325 | Over-extraction |
+| `yahoo-3` | 8,850 | 2,844 | Over-extraction |
 
 These differences are committed as explicit regression baselines. The test
 still executes and reports every case; a new difference fails the suite.
 Baselines describe current behavior and must not be interpreted as correctness
 exceptions.
+
+`ArticleGolden.jsonl` is a separate direct oracle generated from the pinned
+readabilityrs revision. It compares extraction success, all public metadata,
+the public byte length, and whitespace-normalized text. The corresponding
+field-level baseline prevents Rust implementation differences from being
+confused with differences against Mozilla's expected output.
 
 ## Reproducing
 

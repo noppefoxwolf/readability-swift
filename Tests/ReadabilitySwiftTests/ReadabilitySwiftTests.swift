@@ -24,6 +24,21 @@ import Testing
     #expect(article.length > 100)
 }
 
+@Test func unsafeElementsAreRemovedAfterHTMLParsing() throws {
+    let html = """
+    <article>
+      <p>This substantial article paragraph remains readable after unsafe elements are removed from the parsed document.</p>
+      <script>script text must not be scored</script >
+      <style>style text must not be scored</style\n>
+      <noscript>fallback text must not be scored</noscript>
+      <template>template text must not be scored</template>
+    </article>
+    """
+    let article = try Readability(html, options: .init(charThreshold: 20)).parse()
+    #expect(article.textContent?.contains("substantial article paragraph") == true)
+    #expect(article.textContent?.contains("must not be scored") == false)
+}
+
 @Test func optionsAndMarkdownOutput() throws {
     let html = "<article><h1>Title</h1><p>A paragraph with <strong>emphasis</strong>.</p><ul><li>One</li></ul></article>"
     let options = ReadabilityOptions(

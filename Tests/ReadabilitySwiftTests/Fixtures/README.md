@@ -17,3 +17,10 @@ captured while running readabilityrs's `markdown_tests` integration target at
 the same commit. The upstream target contains 123 tests; cases that exercise
 non-default options, the full extraction pipeline, or corpus-wide invariants
 are represented as native Swift tests instead of golden pairs.
+
+`ArticleGolden.jsonl` contains readabilityrs's default `Article` result for all
+130 pages at the same commit. It records metadata, the public byte length, and
+whitespace-normalized text content. `ArticleGoldenKnownDifferences.txt` is the
+field-level Swift divergence baseline; removing an entry after a compatibility
+fix is safe, while adding one requires reviewing the reported Rust and Swift
+values.

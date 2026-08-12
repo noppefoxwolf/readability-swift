@@ -4,12 +4,7 @@ import SwiftSoup
 enum Cleaner {
     static func prepDocument(_ html: String) -> String {
         var result = html
-        let patterns = [
-            "(?is)<script\\b[^>]*>.*?</script>",
-            "(?is)<style\\b[^>]*>.*?</style>",
-            "(?is)<form\\b[^>]*>.*?</form>"
-        ]
-        for pattern in patterns { result = result.replacingOccurrences(of: pattern, with: "", options: .regularExpression) }
+        result = result.replacingOccurrences(of: "(?is)<form\\b[^>]*>.*?</form>", with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: "<font\\b", with: "<span", options: .regularExpression)
         result = result.replacingOccurrences(of: "</font>", with: "</span>", options: .regularExpression)
         if let regex = try? NSRegularExpression(pattern: "(?is)<noscript\\b[^>]*>(.*?)</noscript>") {
@@ -23,6 +18,16 @@ enum Cleaner {
             }
         }
         return result
+    }
+
+    static func removeUnsafeElements(from document: Document) {
+        // readabilityrs removes these after parsing because a source regex cannot
+        // recognize every HTML-valid closing tag spelling. SwiftSoup exposes a
+        // mutable tree instead of scraper's NodeIds, so remove the selected nodes
+        // directly while preserving the same preprocessing order.
+        for element in (try? document.select("script,style,noscript,template")) ?? SwiftSoup.Elements() {
+            try? element.remove()
+        }
     }
 
     static func cleanArticleContentLight(_ html: String, baseURL: URL?) -> ReadabilityResult<String> {

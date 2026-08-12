@@ -30,6 +30,7 @@ public final class Readability {
         guard let preprocessedDocument = try? DOMUtils.parse(preprocessedHTML) else {
             throw ReadabilityError.parsingFailed("Unable to parse the preprocessed HTML")
         }
+        Cleaner.removeUnsafeElements(from: preprocessedDocument)
         let extraction = ContentExtractor.grabArticle(preprocessedDocument, options: options)
         let extracted: String
         // readabilityrs flattens extraction errors and no-content into None.

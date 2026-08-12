@@ -9,35 +9,12 @@ enum PostProcessor {
         keepClasses: Bool = false,
         classesToPreserve: [String] = ["page"]
     ) -> String {
-        guard let document = try? DOMUtils.parse(html), let body = document.body() else { return html }
-        if cleanStyles {
-            for element in (try? body.select("*")) ?? SwiftSoup.Elements() {
-                _ = try? element.removeAttr("style")
-                _ = try? element.removeAttr("align")
-                _ = try? element.removeAttr("bgcolor")
-                _ = try? element.removeAttr("border")
-                _ = try? element.removeAttr("background")
-                _ = try? element.removeAttr("cellpadding")
-                _ = try? element.removeAttr("cellspacing")
-                _ = try? element.removeAttr("frame")
-                _ = try? element.removeAttr("hspace")
-                _ = try? element.removeAttr("rules")
-                _ = try? element.removeAttr("valign")
-                _ = try? element.removeAttr("vspace")
-            }
-        }
+        var result = cleanStyles ? removingPresentationAttributes(from: html) : html
+        result = removingUnwantedElements(from: result)
+        result = removingShareElements(from: result)
+        result = removingNavigationElements(from: result)
         if cleanWhitespace {
-            for element in (try? body.select("p,div,section")) ?? SwiftSoup.Elements() {
-                let text = DOMUtils.normalizeWhitespace(DOMUtils.textContent(element))
-                if text.isEmpty && ((try? element.select("img,video,pre,table")) ?? SwiftSoup.Elements()).isEmpty() { try? element.remove() }
-            }
-        }
-        removeUnwantedElements(from: body)
-        removeShareElements(from: body)
-        removeNavigationElements(from: body)
-        if cleanWhitespace { removeEmptyParagraphs(from: body) }
-        var result = (try? body.html()) ?? html
-        if cleanWhitespace {
+            result = removingEmptyParagraphs(from: result)
             // A whole-string replacement would also collapse significant code
             // whitespace. readabilityrs protects these serialized spans with a
             // byte scanner; Preformatted is its String.Index-based Swift port.
@@ -69,63 +46,263 @@ enum PostProcessor {
         return (try? body.html()) ?? html
     }
 
-    private static func removeUnwantedElements(from root: Element) {
-        for selector in ["script", "style", "form", "fieldset", "input", "button", "textarea", "select", "iframe", "object", "embed", "link", "footer", "aside"] {
-            for element in (try? root.select(selector)) ?? SwiftSoup.Elements() { try? element.remove() }
+    private static func removingPresentationAttributes(from html: String) -> String {
+        let patterns = [
+            #"(?i)\s+style\s*=\s*"[^"]*""#,
+            #"(?i)\s+style\s*=\s*'[^']*'"#,
+            #"(?i)\s+align\s*=\s*["'][^"']*["']"#,
+            #"(?i)\s+bgcolor\s*=\s*["'][^"']*["']"#,
+            #"(?i)\s+valign\s*=\s*["'][^"']*["']"#,
+        ]
+        return patterns.reduce(html) { result, pattern in
+            result.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
         }
     }
 
-    private static func removeShareElements(from root: Element) {
-        for tag in ["div", "span", "aside", "section"] {
-            for element in (try? root.select(tag)) ?? SwiftSoup.Elements() {
-                let marker = DOMUtils.classAndID(element).lowercased()
-                let tokens = marker.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
-                if tokens.contains("share") || tokens.contains("social") || tokens.contains("sharedaddy") {
-                    try? element.remove()
+    private static func removingUnwantedElements(from html: String) -> String {
+        var result = html
+        for tag in ["form", "fieldset", "footer", "aside", "object", "iframe", "textarea", "select", "button"] {
+            result = removingElements(from: result, tag: tag, removesOpeningTagWithoutClosingTag: false)
+        }
+        for tag in ["embed", "input", "link"] {
+            result = removingElements(from: result, tag: tag, removesOpeningTagWithoutClosingTag: true)
+        }
+        return result
+    }
+
+    private static func removingShareElements(from html: String) -> String {
+        removingWrappers(
+            from: html,
+            tags: ["div", "span", "aside", "section"],
+            keywords: ["share", "social", "sharedaddy"]
+        )
+    }
+
+    private static func removingNavigationElements(from html: String) -> String {
+        let withoutNav = removingElements(
+            from: html,
+            tag: "nav",
+            removesOpeningTagWithoutClosingTag: false
+        )
+        return removingWrappers(
+            from: withoutNav,
+            tags: ["div", "section", "ul", "ol"],
+            keywords: ["nav", "navbar", "menu", "breadcrumbs"]
+        )
+    }
+
+    private static func removingWrappers(from html: String, tags: [String], keywords: [String]) -> String {
+        var result = html
+        // This deliberately follows readabilityrs's serialized-HTML regexes.
+        // A DOM removal would delete an entire nested wrapper, while the Rust
+        // implementation stops at the first matching closing tag.
+        for tag in tags {
+            for keyword in keywords {
+                for attribute in ["class", "id"] {
+                    result = removingWrapper(
+                        from: result,
+                        tag: tag,
+                        attribute: attribute,
+                        containing: keyword
+                    )
                 }
             }
         }
+        return result
     }
 
-    private static func removeNavigationElements(from root: Element) {
-        for selector in ["nav", "[role=navigation]", "div[class*=nav],section[class*=nav],ul[class*=nav],ol[class*=nav]",
-                         "div[class*=navbar],section[class*=navbar],ul[class*=navbar],ol[class*=navbar]",
-                         "div[class*=menu],section[class*=menu],ul[class*=menu],ol[class*=menu]",
-                         "div[class*=breadcrumbs],section[class*=breadcrumbs],ul[class*=breadcrumbs],ol[class*=breadcrumbs]",
-                         "div[class*=sidebar],section[class*=sidebar],ul[class*=sidebar],ol[class*=sidebar]"] {
-            for element in (try? root.select(selector)) ?? SwiftSoup.Elements() {
-                guard shouldRemoveNavigationElement(element) else { continue }
-                try? element.remove()
+    private static func removingWrapper(
+        from html: String,
+        tag: String,
+        attribute: String,
+        containing keyword: String
+    ) -> String {
+        let result = NSMutableString(string: html)
+        let openingNeedle = "<\(tag)"
+        let closingNeedle = "</\(tag)>"
+        var searchLocation = 0
+
+        while searchLocation < result.length {
+            let searchRange = NSRange(location: searchLocation, length: result.length - searchLocation)
+            let openingRange = result.range(of: openingNeedle, options: .caseInsensitive, range: searchRange)
+            guard openingRange.location != NSNotFound else { break }
+            let boundaryLocation = NSMaxRange(openingRange)
+            guard boundaryLocation == result.length || !isRegexWordCodeUnit(result.character(at: boundaryLocation)) else {
+                searchLocation = boundaryLocation
+                continue
+            }
+            let openingEnd = result.range(
+                of: ">",
+                range: NSRange(location: boundaryLocation, length: result.length - boundaryLocation)
+            )
+            guard openingEnd.location != NSNotFound else { break }
+            let openingTagRange = NSRange(
+                location: openingRange.location,
+                length: NSMaxRange(openingEnd) - openingRange.location
+            )
+            let openingTag = result.substring(with: openingTagRange).lowercased()
+            let attributePrefix = "\(attribute.lowercased())=\""
+            guard let attributeRange = openingTag.range(of: attributePrefix) else {
+                searchLocation = boundaryLocation
+                continue
+            }
+            let valueStart = attributeRange.upperBound
+            guard let valueEnd = openingTag[valueStart...].firstIndex(of: "\"") else {
+                searchLocation = boundaryLocation
+                continue
+            }
+            guard openingTag[valueStart..<valueEnd].contains(keyword.lowercased()) else {
+                searchLocation = boundaryLocation
+                continue
+            }
+            let contentLocation = NSMaxRange(openingEnd)
+            let closingRange = result.range(
+                of: closingNeedle,
+                options: .caseInsensitive,
+                range: NSRange(location: contentLocation, length: result.length - contentLocation)
+            )
+            guard closingRange.location != NSNotFound else { break }
+            result.deleteCharacters(
+                in: NSRange(
+                    location: openingRange.location,
+                    length: NSMaxRange(closingRange) - openingRange.location
+                )
+            )
+            searchLocation = openingRange.location
+        }
+        return String(result)
+    }
+
+    private static func isRegexWordCodeUnit(_ codeUnit: unichar) -> Bool {
+        codeUnit == 95 || UnicodeScalar(codeUnit).map(CharacterSet.alphanumerics.contains) == true
+    }
+
+    private static func removingElements(
+        from html: String,
+        tag: String,
+        removesOpeningTagWithoutClosingTag: Bool
+    ) -> String {
+        let result = NSMutableString(string: html)
+        let openingNeedle = "<\(tag)"
+        let closingNeedle = "</\(tag)>"
+        var searchLocation = 0
+
+        while searchLocation < result.length {
+            let searchRange = NSRange(location: searchLocation, length: result.length - searchLocation)
+            let openingRange = result.range(of: openingNeedle, options: .caseInsensitive, range: searchRange)
+            guard openingRange.location != NSNotFound else { break }
+            let boundaryLocation = NSMaxRange(openingRange)
+            guard boundaryLocation == result.length || !isRegexWordCodeUnit(result.character(at: boundaryLocation)) else {
+                searchLocation = boundaryLocation
+                continue
+            }
+            let openingEnd = result.range(
+                of: ">",
+                range: NSRange(location: boundaryLocation, length: result.length - boundaryLocation)
+            )
+            guard openingEnd.location != NSNotFound else { break }
+            let contentLocation = NSMaxRange(openingEnd)
+            let closingRange = result.range(
+                of: closingNeedle,
+                options: .caseInsensitive,
+                range: NSRange(location: contentLocation, length: result.length - contentLocation)
+            )
+            if closingRange.location != NSNotFound {
+                result.deleteCharacters(
+                    in: NSRange(
+                        location: openingRange.location,
+                        length: NSMaxRange(closingRange) - openingRange.location
+                    )
+                )
+                searchLocation = openingRange.location
+            } else if removesOpeningTagWithoutClosingTag {
+                result.deleteCharacters(
+                    in: NSRange(
+                        location: openingRange.location,
+                        length: NSMaxRange(openingEnd) - openingRange.location
+                    )
+                )
+                searchLocation = openingRange.location
+            } else {
+                searchLocation = contentLocation
             }
         }
+        return String(result)
     }
 
-    private static func shouldRemoveNavigationElement(_ element: Element) -> Bool {
-        let textLength = DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count
-        let paragraphCount = (try? element.select("p").count) ?? 0
-        if textLength > 600 && paragraphCount > 0 { return false }
-        return textLength < 400 || DOMUtils.linkDensity(element) > 0.55
-    }
-
-    private static func removeEmptyParagraphs(from root: Element) {
+    private static func removingEmptyParagraphs(from html: String) -> String {
+        var result = html
         for _ in 0..<5 {
-            var removed = false
-            for element in (try? root.select("p")) ?? SwiftSoup.Elements() {
-                let text = DOMUtils.normalizeWhitespace(DOMUtils.textContent(element))
-                let hasMedia = !((try? element.select("img,video,pre,table")) ?? SwiftSoup.Elements()).isEmpty()
-                let hasOnlyBreaks = DOMUtils.textContent(element).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                if !hasMedia && (text.isEmpty || hasOnlyBreaks) {
-                    try? element.remove()
-                    removed = true
-                }
+            let cleaned = removingEmptyParagraphPass(from: result)
+            if cleaned == result { break }
+            result = cleaned
+        }
+        return result.replacingOccurrences(
+            of: #"(?i)(</(?:p|div|h[1-6])>)\s*(?:<br\s*/?>[\s\n]*)+\s*(<(?:p|div|h[1-6]))"#,
+            with: "$1\n$2",
+            options: .regularExpression
+        )
+    }
+
+    private static func removingEmptyParagraphPass(from html: String) -> String {
+        let result = NSMutableString(string: html)
+        var searchLocation = 0
+        while searchLocation < result.length {
+            let openingRange = result.range(
+                of: "<p",
+                options: .caseInsensitive,
+                range: NSRange(location: searchLocation, length: result.length - searchLocation)
+            )
+            guard openingRange.location != NSNotFound else { break }
+            let boundaryLocation = NSMaxRange(openingRange)
+            guard boundaryLocation == result.length || !isRegexWordCodeUnit(result.character(at: boundaryLocation)) else {
+                searchLocation = boundaryLocation
+                continue
             }
-            if !removed { break }
+            let openingEnd = result.range(
+                of: ">",
+                range: NSRange(location: boundaryLocation, length: result.length - boundaryLocation)
+            )
+            guard openingEnd.location != NSNotFound else { break }
+            let contentLocation = NSMaxRange(openingEnd)
+            let closingRange = result.range(
+                of: "</p>",
+                options: .caseInsensitive,
+                range: NSRange(location: contentLocation, length: result.length - contentLocation)
+            )
+            guard closingRange.location != NSNotFound else { break }
+            let content = result.substring(
+                with: NSRange(location: contentLocation, length: closingRange.location - contentLocation)
+            )
+            if paragraphContentIsEmpty(content) {
+                result.deleteCharacters(
+                    in: NSRange(
+                        location: openingRange.location,
+                        length: NSMaxRange(closingRange) - openingRange.location
+                    )
+                )
+                searchLocation = openingRange.location
+            } else {
+                searchLocation = NSMaxRange(closingRange)
+            }
         }
-        for br in (try? root.select("br")) ?? SwiftSoup.Elements() {
-            let previousTag = (try? br.previousElementSibling()?.tagName().lowercased()) ?? ""
-            let nextTag = (try? br.nextElementSibling()?.tagName().lowercased()) ?? ""
-            let blockTags = ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"]
-            if blockTags.contains(previousTag) && blockTags.contains(nextTag) { try? br.remove() }
-        }
+        return String(result)
+    }
+
+    private static func paragraphContentIsEmpty(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || removingBreakTags(from: trimmed).isEmpty { return true }
+        guard trimmed.range(of: "<span", options: [.anchored, .caseInsensitive]) != nil,
+              let openingEnd = trimmed.firstIndex(of: ">"),
+              let closingRange = trimmed.range(of: "</span>", options: [.backwards, .caseInsensitive]),
+              closingRange.upperBound == trimmed.endIndex else { return false }
+        let spanContent = String(trimmed[trimmed.index(after: openingEnd)..<closingRange.lowerBound])
+        return removingBreakTags(from: spanContent).isEmpty
+    }
+
+    private static func removingBreakTags(from content: String) -> String {
+        content
+            .replacingOccurrences(of: #"(?i)<br\s*/?>"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

@@ -38,10 +38,8 @@ private let knownSwiftExtendedMetadataDivergences: Set<String> = [
 private let knownSwiftContentDivergences: Set<String> = [
     "archive-of-our-own",
     "bug-1255978",
-    "heise",
     "hukumusume",
     "yahoo-3",
-    "yahoo-4",
 ]
 
 private struct MozillaExpectedMetadata: Decodable {
