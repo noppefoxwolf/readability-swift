@@ -3,6 +3,9 @@ import SwiftSoup
 
 enum ElementCodeBlocks {
     static func standardize(_ html: String) -> String {
+        // readabilityrs parses a fragment and uses ElementRef::html() for the
+        // selected element. SwiftSoup builds a document shell, and its html()
+        // means inner HTML, so traverse body and capture outerHtml() instead.
         guard let document = try? SwiftSoup.parse(html), let body = document.body() else { return html }
         var replacements: [(String, String)] = []
 

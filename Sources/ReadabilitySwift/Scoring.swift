@@ -32,6 +32,8 @@ enum Scoring {
 
     static func calculateContentScore(_ element: Element, linkDensityModifier: Double) -> Double {
         let text = DOMUtils.getInnerText(element, normalizeSpaces: false)
+        // readabilityrs scores Rust str::len() values, which are UTF-8 bytes.
+        // String.count would change thresholds for non-ASCII articles.
         guard text.utf8.count >= 25 else { return 0 }
         let commaCount = text.filter { ",،﹐､，；;⸲⹁⸴⹉⹌".contains($0) }.count
         var score = 1.0 + Double(commaCount)

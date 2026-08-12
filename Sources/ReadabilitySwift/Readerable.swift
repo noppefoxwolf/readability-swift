@@ -21,6 +21,7 @@ public enum Readerable {
         var score = 0.0
         for element in elements {
             let text = rawText(from: element).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Rust str::len() is a UTF-8 byte count, not Swift's grapheme count.
             let textLength = text.utf8.count
             guard textLength >= options.minContentLength else { continue }
             score += Double(textLength - options.minContentLength).squareRoot()

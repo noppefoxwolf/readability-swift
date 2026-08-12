@@ -44,6 +44,9 @@ enum ContentExtractor {
         let selectors = ["p"] + Constants.defaultTagsToScore.map { $0.lowercased() }
         for selector in selectors {
             for element in (try? document.select(selector)) ?? SwiftSoup.Elements() {
+                // Rust str::len() counts UTF-8 bytes, whereas Swift
+                // String.count counts extended grapheme clusters. Compatibility
+                // thresholds must therefore use utf8.count.
                 guard DOMUtils.isProbablyVisible(element), DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count >= 25 else { continue }
                 if flags.contains(.stripUnlikelies) {
                     let match = DOMUtils.classAndID(element)
@@ -56,6 +59,9 @@ enum ContentExtractor {
     }
 
     private static func scoreCandidates(_ candidates: [Element], options: ReadabilityOptions, flags: ParseFlags) -> [ObjectIdentifier: (element: Element, score: Double)] {
+        // readabilityrs keys this table by ego_tree::NodeId. SwiftSoup exposes
+        // reference-typed nodes but no stable public node ID, so ObjectIdentifier
+        // is the equivalent only for the lifetime of this parsed Document.
         var scores: [ObjectIdentifier: (element: Element, score: Double)] = [:]
         for candidate in candidates {
             let contentScore = Scoring.calculateContentScore(candidate, linkDensityModifier: options.linkDensityModifier)
@@ -286,6 +292,10 @@ enum ContentExtractor {
     }
 
     private static func serializeElement(_ element: Element, sanitizeContent: Bool) -> String {
+        // Neither SwiftSoup serializer is a drop-in replacement for
+        // readabilityrs's element_to_html: Element.html() emits only children,
+        // while outerHtml() follows SwiftSoup's own void-tag and formatting
+        // rules. Serialize explicitly to retain DIV-to-P and sanitizing parity.
         guard DOMUtils.isProbablyVisible(element) else { return "" }
         let originalTag = element.tagName().lowercased()
         if sanitizeContent && ["script", "style", "iframe", "object", "embed", "form", "noscript", "template"].contains(originalTag) {

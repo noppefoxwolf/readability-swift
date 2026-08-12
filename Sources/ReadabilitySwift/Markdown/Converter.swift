@@ -4,6 +4,9 @@ import SwiftSoup
 enum MarkdownConverter {
     static func htmlToMarkdown(_ html: String, options: MarkdownOptions, title: String? = nil) -> String {
         let standardized = Elements.standardizeAll(html, title: title)
+        // readabilityrs traverses scraper's synthetic fragment root. SwiftSoup
+        // parseFragment returns a node array rather than a common Element, so a
+        // document body is used as the equivalent conversion root.
         guard let document = try? SwiftSoup.parse(standardized) else {
             return standardized.replacingOccurrences(of: "(?is)<[^>]+>", with: "", options: .regularExpression)
         }
@@ -27,6 +30,9 @@ enum MarkdownConverter {
 
     private static func render(_ node: Node, options: MarkdownOptions, state: inout MarkdownConversionState) -> String {
         if let text = node as? TextNode {
+            // Element.text() would normalize this before the converter can
+            // distinguish normal flow from a code block. scraper exposes raw
+            // Node::Text, whose SwiftSoup counterpart is getWholeText().
             return state.inCodeBlock ? text.getWholeText() : MarkdownTextRules.escape(text.getWholeText().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression))
         }
         guard let element = node as? Element else { return "" }
@@ -153,7 +159,11 @@ enum MarkdownConverter {
                 return ""
             }
         }
-        if tag == "details" { return "\n\n\((try? element.outerHtml()) ?? "")\n\n" }
+        if tag == "details" {
+            // scraper ElementRef::html() serializes the selected element;
+            // SwiftSoup Element.html() serializes only its children.
+            return "\n\n\((try? element.outerHtml()) ?? "")\n\n"
+        }
         if tag == "dt" { return "\n\n**\(inner.trimmingCharacters(in: .whitespacesAndNewlines))**\n" }
         if tag == "dd" { return ": \(inner.trimmingCharacters(in: .whitespacesAndNewlines))\n" }
         if ["p", "div", "section", "article", "main", "tr", "td", "th"].contains(tag) {
@@ -262,6 +272,9 @@ enum MarkdownConverter {
 
     private static func complexTableHTML(_ element: Element) -> String {
         let html = (try? element.outerHtml()) ?? ""
+        // html5ever inserts an implicit tbody around direct tr children during
+        // tree construction. SwiftSoup may retain direct rows, so add the
+        // wrapper required by readabilityrs's raw complex-table output.
         guard html.range(of: "<tbody", options: .caseInsensitive) == nil,
               html.range(of: "<tr", options: .caseInsensitive) != nil,
               let openingEnd = html.firstIndex(of: ">"),

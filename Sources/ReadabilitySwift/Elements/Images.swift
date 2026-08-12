@@ -2,9 +2,14 @@ import Foundation
 
 enum ElementImages {
     static func standardize(_ html: String) -> String {
+        // Keep this as a source-text rewrite like readabilityrs. Parsing and
+        // reserializing an img through SwiftSoup can change quote style,
+        // attribute order, and void-tag spelling before the Markdown pipeline.
         let pattern = "(?is)<img\\b[^>]*>"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return html }
         var result = html
+        // NSRegularExpression ranges are UTF-16 offsets into the original
+        // string. Replacing from the end keeps all remaining offsets valid.
         let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
         for match in matches {
             guard let range = Range(match.range, in: html) else { continue }

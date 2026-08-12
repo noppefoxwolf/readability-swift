@@ -5,6 +5,9 @@ enum DOMUtils {
     static func parse(_ html: String) throws -> Document {
         do {
             let document = try SwiftSoup.parse(html)
+            // SwiftSoup pretty-prints by default and can therefore introduce
+            // text-node whitespace that scraper/html5ever does not synthesize.
+            // Extraction scores and Markdown goldens observe that whitespace.
             document.outputSettings().prettyPrint(pretty: false)
             return document
         }
@@ -12,6 +15,9 @@ enum DOMUtils {
     }
 
     static func textContent(_ element: Element) -> String {
+        // SwiftSoup's Element.text() normalizes whitespace and inserts spacing
+        // around some elements. readabilityrs collects scraper Text nodes
+        // verbatim, so walk TextNode.getWholeText() instead.
         rawText(from: element)
     }
 

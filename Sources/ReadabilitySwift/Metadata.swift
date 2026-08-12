@@ -28,6 +28,10 @@ enum MetadataExtractor {
                     .replacingOccurrences(of: "\\]\\]>\\s*$", with: "", options: [.regularExpression, .caseInsensitive])
                     .trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: data) else { continue }
+            // readabilityrs traverses serde_json::Value. Foundation exposes an
+            // untyped Any graph instead, so articleDictionary and the helpers
+            // below explicitly preserve the object/array/string cases used by
+            // the Rust implementation.
             guard let value = articleDictionary(from: object) else { continue }
 
             let name = string(value["name"])

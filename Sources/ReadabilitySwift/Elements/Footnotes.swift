@@ -8,6 +8,9 @@ enum ElementFootnotes {
     }
 
     static func standardize(_ html: String) -> String {
+        // scraper's fragment root and ElementRef::html() do not map directly to
+        // SwiftSoup. Parse into a body shell and use outerHtml() wherever the
+        // Rust implementation serializes the selected container itself.
         guard let document = try? SwiftSoup.parse(html), let body = document.body() else { return html }
         var references: [String] = []
         for sup in (try? body.select("sup")) ?? SwiftSoup.Elements() {

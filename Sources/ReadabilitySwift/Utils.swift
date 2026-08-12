@@ -2,6 +2,9 @@ import Foundation
 
 enum Utils {
     static func isDangerousURL(_ value: String) -> Bool {
+        // Do not delegate this check to Foundation.URL. Browsers normalize
+        // whitespace and C0 controls inside a scheme, and Foundation's URL
+        // normalization is not the same as readabilityrs's raw-string filter.
         let trimmed = value.drop(while: { $0.isWhitespace || $0.isASCII && $0.asciiValue.map({ $0 < 32 }) == true })
         guard let colon = trimmed.firstIndex(of: ":") else { return false }
         let rawScheme = trimmed[..<colon]
@@ -49,6 +52,9 @@ enum Utils {
     }
 
     static func isURL(_ value: String) -> Bool {
+        // URL(string:) also accepts relative references. readabilityrs uses
+        // url::Url::parse here, so require an explicit RFC-style scheme to keep
+        // relative author links from being mistaken for metadata URLs.
         guard let url = URL(string: value), let scheme = url.scheme, !scheme.isEmpty else { return false }
         return scheme.range(of: "^[A-Za-z][A-Za-z0-9+.-]*$", options: .regularExpression) != nil
     }

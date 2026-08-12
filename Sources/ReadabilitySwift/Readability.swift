@@ -12,6 +12,9 @@ public final class Readability {
     public init(_ html: String, baseURL: URL? = nil, options: ReadabilityOptions = .init()) throws {
         self.document = try DOMUtils.parse(html)
         self.html = html
+        // readabilityrs accepts a raw string and validates it with url::Url.
+        // This API accepts an already-parsed Foundation.URL, so the remaining
+        // equivalent validation is that the URL is absolute.
         if let baseURL, baseURL.scheme?.isEmpty != false {
             throw ReadabilityError.invalidURL(baseURL.absoluteString)
         }
@@ -29,6 +32,9 @@ public final class Readability {
         }
         let extraction = ContentExtractor.grabArticle(preprocessedDocument, options: options)
         let extracted: String
+        // readabilityrs flattens extraction errors and no-content into None.
+        // The Swift API is throwing, so preserve both states as typed errors
+        // instead of silently returning an optional Article.
         switch extraction {
         case let .success(value?):
             extracted = value
@@ -75,6 +81,7 @@ public final class Readability {
             title: title,
             content: cleanedHTML,
             textContent: text,
+            // readabilityrs exposes Rust str::len(), i.e. UTF-8 bytes.
             length: text.utf8.count,
             excerpt: excerpt,
             byline: metadata.byline,

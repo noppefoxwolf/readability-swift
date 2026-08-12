@@ -38,6 +38,9 @@ enum PostProcessor {
         if cleanWhitespace { removeEmptyParagraphs(from: body) }
         var result = (try? body.html()) ?? html
         if cleanWhitespace {
+            // A whole-string replacement would also collapse significant code
+            // whitespace. readabilityrs protects these serialized spans with a
+            // byte scanner; Preformatted is its String.Index-based Swift port.
             result = Preformatted.mapOutside(result) { fragment in
                 fragment
                     .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)

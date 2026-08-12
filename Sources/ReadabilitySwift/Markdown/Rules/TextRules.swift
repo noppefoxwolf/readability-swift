@@ -22,6 +22,9 @@ enum MarkdownTextRules {
     }
 
     static func escapeURLDestination(_ value: String) -> String {
+        // Rust iterates Unicode scalar values (char). Iterate scalars here as
+        // well instead of Swift Characters so controls cannot hide inside a
+        // grapheme cluster before the destination is emitted.
         let stripped = String(value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
         guard stripped.contains(where: { " ()<>".contains($0) }) else { return stripped }
         let inner = stripped

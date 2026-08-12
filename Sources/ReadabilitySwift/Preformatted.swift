@@ -1,6 +1,11 @@
 enum Preformatted {
     private static let tagNames = ["pre", "code"]
 
+    // readabilityrs scans serialized UTF-8 with byte offsets. Swift String
+    // indices are grapheme-aware and cannot be advanced by those offsets, so
+    // this port performs the same opaque-span scan entirely with String.Index.
+    // It operates on serialized text instead of the SwiftSoup tree because its
+    // callers apply regex rewrites after DOM serialization.
     static func mapOutside(_ html: String, transform: (String) -> String) -> String {
         var output = ""
         output.reserveCapacity(html.count)

@@ -117,6 +117,9 @@ enum Cleaner {
 
     private static func removeConditionally(from root: Element) {
         for element in (try? root.select("form,fieldset")) ?? SwiftSoup.Elements() { try? element.remove() }
+        // readabilityrs stores ego_tree NodeIds for data-table membership.
+        // ObjectIdentifier is the SwiftSoup reference-identity equivalent; the
+        // set must never be reused after reparsing the HTML into another tree.
         let dataTables = Set(((try? root.select("table")) ?? SwiftSoup.Elements())
             .filter(isDataTable)
             .map(ObjectIdentifier.init))

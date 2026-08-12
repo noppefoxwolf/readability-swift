@@ -3,6 +3,9 @@ import SwiftSoup
 
 enum ElementMath {
     static func standardize(_ html: String) -> String {
+        // SwiftSoup has no common Element root for parseFragment's returned
+        // nodes. A document body supplies the traversal root used by scraper's
+        // Html::parse_fragment; outerHtml() then matches ElementRef::html().
         guard let document = try? SwiftSoup.parse(html), let body = document.body() else { return html }
         var replacements: [(String, String)] = []
         for selector in ["mjx-container", "span.MathJax", "span.katex"] {
