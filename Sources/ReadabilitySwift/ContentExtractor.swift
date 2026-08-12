@@ -104,6 +104,10 @@ enum ContentExtractor {
             best = promoted
             bestScore = scores[ObjectIdentifier(best)]?.score ?? bestScore
         }
+        if let promoted = promoteNearTieAncestor(best, bestScore: bestScore, scores: scores) {
+            best = promoted
+            bestScore = scores[ObjectIdentifier(best)]?.score ?? bestScore
+        }
         if let promoted = promoteHighScoringParent(best, bestScore: bestScore, scores: scores) {
             best = promoted
             bestScore = scores[ObjectIdentifier(best)]?.score ?? bestScore
@@ -119,6 +123,31 @@ enum ContentExtractor {
             best = promoted
         }
         return best
+    }
+
+    private static func promoteNearTieAncestor(
+        _ element: Element,
+        bestScore: Double,
+        scores: [ObjectIdentifier: (element: Element, score: Double)]
+    ) -> Element? {
+        guard bestScore > 0 else { return nil }
+        var current = element.parent()
+        while let ancestor = current, !["BODY", "HTML"].contains(ancestor.tagName().uppercased()) {
+            if let score = scores[ObjectIdentifier(ancestor)]?.score,
+               score >= bestScore * 0.97,
+               score <= bestScore * 1.03,
+               DOMUtils.linkDensity(ancestor) <= 0.33 {
+                // scraper/html5ever and SwiftSoup can attach malformed-HTML
+                // text nodes to adjacent containers differently. That slightly
+                // changes link-density scores and can reverse two near-equal
+                // nested candidates. readabilityrs then keeps the broader
+                // ancestor, so preserve it when the score difference is noise-
+                // sized in either direction and it still looks content-dense.
+                return ancestor
+            }
+            current = ancestor.parent()
+        }
+        return nil
     }
 
     private static func promoteSharedTopCandidateParent(

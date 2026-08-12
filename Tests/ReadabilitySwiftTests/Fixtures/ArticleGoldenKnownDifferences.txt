@@ -59,7 +59,6 @@ lazy-image-2.normalizedTextContent
 lemonde-1.lang
 liberation-1.lang
 liberation-1.length
-liberation-1.normalizedTextContent
 lifehacker-post-comment-load.lang
 lifehacker-working.lang
 links-in-tables.dir

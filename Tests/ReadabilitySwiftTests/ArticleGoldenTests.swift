@@ -101,7 +101,7 @@ private struct ArticleGoldenDifference {
 }
 
 @Test func priorityArticleTextGoldenCompatibility() throws {
-    let names = ["citylab-1", "cnet", "quanta-1", "yahoo-2", "yahoo-4"]
+    let names = ["citylab-1", "cnet", "engadget", "liberation-1", "quanta-1", "yahoo-2", "yahoo-4"]
     let goldenCases = try loadArticleGoldenCases()
     let fixtureRoot = try mozillaFixtureRoot()
 
