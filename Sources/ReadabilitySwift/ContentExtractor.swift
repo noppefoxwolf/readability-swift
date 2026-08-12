@@ -99,7 +99,6 @@ enum ContentExtractor {
         if let viable = top.first(where: { isViableBestCandidate($0.element, score: $0.score) }) {
             best = viable.element
         }
-
         var bestScore = scores[ObjectIdentifier(best)]?.score ?? 0
         if let promoted = promoteSharedTopCandidateParent(best, bestScore: bestScore, topCandidates: Array(top)) {
             best = promoted
@@ -112,11 +111,11 @@ enum ContentExtractor {
         if let promoted = promoteSingleChildParent(best) {
             best = promoted
         }
-        if let promoted = promoteDenseWrapperChild(best, scores: scores) {
+        if let promoted = promoteDenseWrapperChild(best, scores: scores, sortedScores: sorted) {
             best = promoted
             bestScore = scores[ObjectIdentifier(best)]?.score ?? bestScore
         }
-        if let promoted = promoteSemanticDescendant(best, bestScore: bestScore, scores: scores) {
+        if let promoted = promoteSemanticDescendant(best, bestScore: bestScore, sortedScores: sorted) {
             best = promoted
         }
         return best
@@ -134,7 +133,10 @@ enum ContentExtractor {
         guard ancestorLists.count >= 3 else { return nil }
 
         var current = element.parent()
-        while let parent = current, !["BODY", "HTML"].contains(parent.tagName().uppercased()) {
+        // readabilityrs stops at BODY but deliberately still evaluates HTML.
+        // Yahoo's modal fixture relies on the HTML class marker to descend
+        // from a page-wide top score back into the semantic article body.
+        while let parent = current, parent.tagName().uppercased() != "BODY" {
             let id = ObjectIdentifier(parent)
             if ancestorLists.filter({ $0.contains(id) }).count >= 3 { return parent }
             current = parent.parent()
@@ -146,6 +148,10 @@ enum ContentExtractor {
         var current = element
         var promoted: Element?
         while let parent = current.parent(), parent.tagName().uppercased() != "BODY" {
+            // scraper's document node cannot be wrapped as ElementRef. SwiftSoup
+            // exposes the same node as a pseudo-element named #root, which must
+            // not become an article candidate.
+            guard parent.tagName() != "#root" else { break }
             guard parent.children().count == 1 else { break }
             promoted = parent
             current = parent
@@ -179,50 +185,58 @@ enum ContentExtractor {
 
     private static func promoteDenseWrapperChild(
         _ element: Element,
-        scores: [ObjectIdentifier: (element: Element, score: Double)]
+        scores: [ObjectIdentifier: (element: Element, score: Double)],
+        sortedScores: [(element: Element, score: Double)]
     ) -> Element? {
         let tag = element.tagName().uppercased()
-        guard !["ARTICLE", "SECTION", "MAIN"].contains(tag), DOMUtils.linkDensity(element) > 0.4 else { return nil }
+        guard !["ARTICLE", "SECTION", "MAIN"].contains(tag) else { return nil }
         let parentScore = scores[ObjectIdentifier(element)]?.score ?? 0
-        return DOMUtils.descendants(element)
+        let bestDensity = DOMUtils.linkDensity(element)
+        let fallback = sortedScores.prefix(20)
             .compactMap { candidate -> (Element, Double)? in
-                let textLength = DOMUtils.getInnerText(candidate, normalizeSpaces: false).utf8.count
-                let density = DOMUtils.linkDensity(candidate)
-                let score = scores[ObjectIdentifier(candidate)]?.score ?? 0
-                let candidateWeight = Scoring.getClassWeight(candidate, flags: [.weightClasses])
-                let marker = DOMUtils.classAndID(candidate)
-                let paragraphCount = (try? candidate.select("p").count) ?? 0
+                guard ObjectIdentifier(candidate.element) != ObjectIdentifier(element),
+                      isDescendant(candidate.element, of: element) else { return nil }
+                let textLength = DOMUtils.getInnerText(candidate.element, normalizeSpaces: false).utf8.count
+                let density = DOMUtils.linkDensity(candidate.element)
+                let candidateWeight = Scoring.getClassWeight(candidate.element, flags: [.weightClasses])
+                let marker = DOMUtils.classAndID(candidate.element)
+                let paragraphCount = (try? candidate.element.select("p").count) ?? 0
                 guard textLength >= 160,
                       density < 0.35,
-                      density < DOMUtils.linkDensity(element) - 0.15,
+                      density < bestDensity - 0.15,
                       !(candidateWeight < 0 && !matches(marker, Constants.regexps.positive)),
-                      (paragraphCount > 0 || textLength >= 300),
-                      score >= parentScore * 0.45 else { return nil }
-                return (candidate, score)
-            }
-            .max(by: { $0.1 < $1.1 })?.0
+                      paragraphCount > 0 || textLength >= 300 else { return nil }
+                return (candidate.element, candidate.score)
+            }.max(by: { $0.1 < $1.1 })
+        guard let fallback, parentScore == 0 || fallback.1 >= parentScore * 0.45 else { return nil }
+        return fallback.0
     }
 
     private static func promoteSemanticDescendant(
         _ element: Element,
         bestScore: Double,
-        scores: [ObjectIdentifier: (element: Element, score: Double)]
+        sortedScores: [(element: Element, score: Double)]
     ) -> Element? {
         guard bestScore > 0 else { return nil }
         let marker = DOMUtils.classAndID(element).lowercased()
         let layoutKeywords = ["content", "container", "main", "column", "outer", "inner", "wrapper"]
         guard layoutKeywords.contains(where: marker.contains) else { return nil }
         let positiveKeywords = ["article", "post", "entry", "body", "story", "text", "blog"]
-        return DOMUtils.descendants(element).compactMap { candidate -> (Element, Double)? in
-            guard DOMUtils.getInnerText(candidate, normalizeSpaces: false).utf8.count >= 200,
-                  DOMUtils.linkDensity(candidate) <= 0.45 else { return nil }
-            let itemprop = (try? candidate.attr("itemprop")) ?? ""
-            let candidateMarker = "\(DOMUtils.classAndID(candidate)) \(itemprop)".lowercased()
+        return sortedScores.prefix(40).compactMap { candidate -> (Element, Double)? in
+            guard ObjectIdentifier(candidate.element) != ObjectIdentifier(element),
+                  isDescendant(candidate.element, of: element),
+                  DOMUtils.getInnerText(candidate.element, normalizeSpaces: false).utf8.count >= 200,
+                  DOMUtils.linkDensity(candidate.element) <= 0.45 else { return nil }
+            let itemprop = (try? candidate.element.attr("itemprop")) ?? ""
+            let candidateMarker = "\(DOMUtils.classAndID(candidate.element)) \(itemprop)".lowercased()
             guard positiveKeywords.contains(where: candidateMarker.contains) || candidateMarker.contains("articlebody") else { return nil }
-            let score = scores[ObjectIdentifier(candidate)]?.score ?? 0
-            guard score >= bestScore * 0.4 else { return nil }
-            return (candidate, score)
+            guard candidate.score >= bestScore * 0.4 else { return nil }
+            return (candidate.element, candidate.score)
         }.max(by: { $0.1 < $1.1 })?.0
+    }
+
+    private static func isDescendant(_ candidate: Element, of ancestor: Element) -> Bool {
+        DOMUtils.ancestors(candidate, limit: 0).contains { ObjectIdentifier($0) == ObjectIdentifier(ancestor) }
     }
 
     private static func extractArticleContent(

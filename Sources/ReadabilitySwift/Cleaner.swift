@@ -41,7 +41,6 @@ enum Cleaner {
         case let .failure(error): return .failure(error)
         case let .success(value):
             guard let document = try? DOMUtils.parse(value), let body = document.body() else { return .success(value) }
-            removeEmptyElements(from: body)
             removeConditionally(from: body)
             return .success((try? body.html()) ?? value)
         }
@@ -112,25 +111,23 @@ enum Cleaner {
         return textLength < 400 || DOMUtils.linkDensity(element) > 0.55
     }
 
-    private static func removeEmptyElements(from root: Element) {
-        for element in (try? root.select("p,div,section,span")) ?? SwiftSoup.Elements() {
-            let text = DOMUtils.normalizeWhitespace(DOMUtils.textContent(element))
-            let hasMedia = !((try? element.select("img,video,pre,table")) ?? SwiftSoup.Elements()).isEmpty()
-            if text.isEmpty && !hasMedia { try? element.remove() }
-        }
-    }
-
     private static func removeConditionally(from root: Element) {
-        for element in (try? root.select("form,fieldset")) ?? SwiftSoup.Elements() { try? element.remove() }
         // readabilityrs stores ego_tree NodeIds for data-table membership.
         // ObjectIdentifier is the SwiftSoup reference-identity equivalent; the
         // set must never be reused after reparsing the HTML into another tree.
         let dataTables = Set(((try? root.select("table")) ?? SwiftSoup.Elements())
             .filter(isDataTable)
             .map(ObjectIdentifier.init))
-        for tag in ["table", "ul", "ol", "div", "section"] {
+        for tag in ["form", "fieldset", "table", "ul", "ol", "div", "section"] {
             let elements = (try? root.select(tag)) ?? SwiftSoup.Elements()
-            for element in elements where shouldRemove(element, tag: tag, dataTables: dataTables) {
+            // readabilityrs first collects every NodeId to detach for a tag,
+            // then mutates the tree. Removing while evaluating would change a
+            // later ancestor's text/count metrics in SwiftSoup.
+            let removals = elements.filter { element in
+                tag == "form" || tag == "fieldset"
+                    || shouldRemove(element, tag: tag, dataTables: dataTables)
+            }
+            for element in removals {
                 try? element.remove()
             }
         }
@@ -141,7 +138,11 @@ enum Cleaner {
         if ["comment", "disqus", "remark", "replies", "respond"].contains(where: classID.contains) { return true }
 
         let text = DOMUtils.getInnerText(element, normalizeSpaces: false)
-        let contentLength = text.count
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // readabilityrs's cleaner measures Rust String byte lengths and counts
+        // every link at full weight here. This intentionally differs from the
+        // extraction scorer, which discounts hash-only navigation links.
+        let contentLength = trimmedText.utf8.count
         if contentLength > 600 { return false }
 
         let isList = tag == "ul" || tag == "ol" || isMostlyList(element, contentLength: contentLength)
@@ -151,10 +152,10 @@ enum Cleaner {
         if DOMUtils.ancestors(element, limit: 0).contains(where: { $0.tagName().lowercased() == "code" }) { return false }
         if DOMUtils.descendants(element).contains(where: { dataTables.contains(ObjectIdentifier($0)) }) { return false }
 
-        let linkDensity = contentLength == 0 ? 1.0 : DOMUtils.linkDensity(element)
+        let linkDensity = cleanerLinkDensity(element, contentLength: contentLength)
         let weight = cleanerClassWeight(element)
         if weight < 0 && (linkDensity > 0.25 || contentLength < 100) { return true }
-        if text.filter({ ",،﹐､，；;⸲⹁⸴⹉⹌".contains($0) }).count >= 10 { return false }
+        if trimmedText.filter({ $0 == "," }).count >= 10 { return false }
 
         let paragraphCount = (try? element.select("p").count) ?? 0
         let imageCount = (try? element.select("img").count) ?? 0
@@ -175,7 +176,14 @@ enum Cleaner {
         if !isList && weight < 25 && linkDensity > 0.2 { shouldRemove = true }
         if weight >= 25 && linkDensity > 0.5 { shouldRemove = true }
         if (embeds.count == 1 && contentLength < 75) || embeds.count > 1 { shouldRemove = true }
-        if imageCount == 0 && textDensityValue == 0 { shouldRemove = true }
+        if imageCount == 0 && textDensityValue == 0 {
+            // SwiftSoup can foster invalid paragraph/media children outside a
+            // positive content section, leaving only its heading text behind.
+            // scraper keeps those children attached, so preserve the compact
+            // heading wrapper that readabilityrs still sees as text-bearing.
+            let isFosteredContentWrapper = weight >= 25 && contentLength >= 25 && headingDensity > 0
+            if !isFosteredContentWrapper { shouldRemove = true }
+        }
 
         if isList && shouldRemove {
             let simpleChildren = element.getChildNodes().compactMap { $0 as? Element }.allSatisfy { child in
@@ -188,9 +196,32 @@ enum Cleaner {
 
     private static func isMostlyList(_ element: Element, contentLength: Int) -> Bool {
         guard contentLength > 0 else { return false }
-        let listText = ((try? element.select("ul,ol")) ?? SwiftSoup.Elements())
-            .reduce(0) { $0 + DOMUtils.getInnerText($1, normalizeSpaces: false).count }
+        let lists = (try? element.select("ul,ol")) ?? SwiftSoup.Elements()
+        // readabilityrs uses untrimmed ElementRef::text() for descendant
+        // lists, divided by the parent's trimmed content length. SwiftSoup's
+        // text helpers discard formatting-only boundary nodes, so measure the
+        // serialized list text here to retain the same whitespace signal.
+        let listText = lists
+            .reduce(0) { $0 + serializedCleanerText($1).utf8.count }
         return Double(listText) / Double(max(contentLength, 1)) > 0.9
+    }
+
+    private static func cleanerLinkDensity(_ element: Element, contentLength: Int) -> Double {
+        guard contentLength > 0 else { return 1 }
+        let linkLength = ((try? element.select("a")) ?? SwiftSoup.Elements()).reduce(0) {
+            $0 + serializedCleanerText($1).utf8.count
+        }
+        return Double(linkLength) / Double(contentLength)
+    }
+
+    private static func serializedCleanerText(_ element: Element) -> String {
+        guard let html = try? element.html() else { return DOMUtils.getInnerText(element, normalizeSpaces: false) }
+        let withoutMarkup = html.replacingOccurrences(
+            of: "(?s)<!--.*?-->|<[^>]*>",
+            with: "",
+            options: .regularExpression
+        )
+        return Utils.unescapeHTMLEntities(withoutMarkup)
     }
 
     private static func cleanerClassWeight(_ element: Element) -> Int {
@@ -204,10 +235,10 @@ enum Cleaner {
     }
 
     private static func textDensity(_ element: Element, selector: String) -> Double {
-        let total = DOMUtils.getInnerText(element, normalizeSpaces: false).count
+        let total = DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count
         guard total > 0 else { return 0 }
         let childText = ((try? element.select(selector)) ?? SwiftSoup.Elements())
-            .reduce(0) { $0 + DOMUtils.getInnerText($1, normalizeSpaces: false).count }
+            .reduce(0) { $0 + DOMUtils.getInnerText($1, normalizeSpaces: false).utf8.count }
         return Double(childText) / Double(total)
     }
 

@@ -92,7 +92,33 @@ private struct ArticleGoldenDifference {
     #expect(stageLengths.allSatisfy { $0 >= 1_000 })
 
     let article = try Readability(sourceHTML).parse()
-    #expect(normalizeArticleGoldenText(article.textContent).count >= 1_000)
+    let actualText = normalizeArticleGoldenText(article.textContent)
+    let golden = try #require(loadArticleGoldenCases().first { $0.name == "bug-1255978" }?.article)
+    if actualText != golden.normalizedTextContent {
+        printArticleGoldenFirstDifference(expected: golden.normalizedTextContent, actual: actualText)
+    }
+    #expect(actualText == golden.normalizedTextContent)
+}
+
+@Test func priorityArticleTextGoldenCompatibility() throws {
+    let names = ["citylab-1", "cnet", "quanta-1", "yahoo-2", "yahoo-4"]
+    let goldenCases = try loadArticleGoldenCases()
+    let fixtureRoot = try mozillaFixtureRoot()
+
+    for name in names {
+        let golden = try #require(goldenCases.first { $0.name == name }?.article)
+        let sourceURL = fixtureRoot
+            .appendingPathComponent(name, isDirectory: true)
+            .appendingPathComponent("source.html")
+        let sourceHTML = try String(contentsOf: sourceURL, encoding: .utf8)
+        let article = try Readability(sourceHTML).parse()
+        let actualText = normalizeArticleGoldenText(article.textContent)
+        if actualText != golden.normalizedTextContent {
+            print("\n\(name):")
+            printArticleGoldenFirstDifference(expected: golden.normalizedTextContent, actual: actualText)
+        }
+        #expect(actualText == golden.normalizedTextContent, "\(name)")
+    }
 }
 
 private func loadArticleGoldenCases() throws -> [ArticleGoldenCase] {
@@ -195,4 +221,16 @@ private func normalizedArticleGoldenHTMLLength(_ html: String) -> Int {
 private func articleGoldenPreview(_ value: String) -> String {
     guard value.count > 180 else { return value }
     return String(value.prefix(180)) + "… (\(value.count) characters)"
+}
+
+private func printArticleGoldenFirstDifference(expected: String, actual: String) {
+    let expectedCharacters = Array(expected)
+    let actualCharacters = Array(actual)
+    let prefixCount = zip(expectedCharacters, actualCharacters).prefix { $0 == $1 }.count
+    let start = max(0, prefixCount - 80)
+    let expectedEnd = min(expectedCharacters.count, prefixCount + 240)
+    let actualEnd = min(actualCharacters.count, prefixCount + 240)
+    print("first difference at \(prefixCount)")
+    print("expected: \(String(expectedCharacters[start..<expectedEnd]))")
+    print("actual:   \(String(actualCharacters[start..<actualEnd]))")
 }

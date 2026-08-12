@@ -16,7 +16,7 @@ without environment variables or network access.
 | Extended metadata (core plus `dir`, `lang`, `publishedTime`) | 116/130 (89.2%) |
 | Article extraction for expected-readerable pages | 122/122 (100.0%) |
 | Extracted text length within readabilityrs's 0.5–2.0× band | 118/122 (96.7%) |
-| Direct readabilityrs `Article` golden | 176 field differences across 90/130 cases |
+| Direct readabilityrs `Article` golden | 150 field differences across 89/130 cases |
 | Default Markdown output byte-for-byte equal to readabilityrs | 105/105 (100.0%) |
 | Markdown quality audit across all Mozilla pages | 130/130 (100.0%) |
 | Preformatted/code whitespace regressions | 7/7 (100.0%) |
@@ -55,9 +55,9 @@ Four expected-readerable pages fall outside the coarse length band:
 | Case | Swift text length | Mozilla expected | Observation |
 | --- | ---: | ---: | --- |
 | `archive-of-our-own` | 74,218 | 22,245 | Over-extraction |
-| `bug-1255978` | 19,904 | 4,152 | No longer empty; close to readabilityrs's 20,301-character output |
+| `bug-1255978` | 20,301 | 4,152 | Matches readabilityrs exactly; both intentionally exceed Mozilla's expected-output band |
 | `hukumusume` | 438 | 920 | Slightly below the lower bound |
-| `yahoo-3` | 8,850 | 2,844 | Over-extraction |
+| `yahoo-3` | 8,976 | 2,844 | Over-extraction |
 
 These differences are committed as explicit regression baselines. The test
 still executes and reports every case; a new difference fails the suite.
