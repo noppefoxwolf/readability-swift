@@ -1,5 +1,3 @@
-import Foundation
-
 enum MarkdownTextRules {
     static func escape(_ value: String) -> String {
         value.reduce(into: "") { result, character in
@@ -9,7 +7,7 @@ enum MarkdownTextRules {
     }
 
     static func inlineCode(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value.trimmed()
         guard !trimmed.isEmpty else { return "" }
         return trimmed.contains("`") ? "`` \(trimmed) ``" : "`\(trimmed)`"
     }
@@ -25,11 +23,11 @@ enum MarkdownTextRules {
         // Rust iterates Unicode scalar values (char). Iterate scalars here as
         // well instead of Swift Characters so controls cannot hide inside a
         // grapheme cluster before the destination is emitted.
-        let stripped = String(value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+        let stripped = String(value.unicodeScalars.filter { $0.properties.generalCategory != .control })
         guard stripped.contains(where: { " ()<>".contains($0) }) else { return stripped }
         let inner = stripped
-            .replacingOccurrences(of: "<", with: "%3C")
-            .replacingOccurrences(of: ">", with: "%3E")
+            .replacing("<", with: "%3C")
+            .replacing(">", with: "%3E")
         return "<\(inner)>"
     }
 

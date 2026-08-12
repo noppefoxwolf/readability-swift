@@ -1,5 +1,3 @@
-import Foundation
-
 public struct ReadabilityOptions {
     public var debug: Bool
     public var maxElemsToParse: Int
@@ -8,7 +6,7 @@ public struct ReadabilityOptions {
     public var classesToPreserve: [String]
     public var keepClasses: Bool
     public var disableJSONLD: Bool
-    public var allowedVideoRegex: NSRegularExpression?
+    public var allowedVideoRegex: Regex<Substring>?
     public var linkDensityModifier: Double
     public var removeTitleFromContent: Bool
     public var cleanStyles: Bool
@@ -25,7 +23,7 @@ public struct ReadabilityOptions {
         classesToPreserve: [String] = ["page"],
         keepClasses: Bool = false,
         disableJSONLD: Bool = false,
-        allowedVideoRegex: NSRegularExpression? = nil,
+        allowedVideoRegex: Regex<Substring>? = nil,
         linkDensityModifier: Double = 0,
         removeTitleFromContent: Bool = false,
         cleanStyles: Bool = true,

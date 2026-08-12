@@ -78,7 +78,7 @@ private struct ArticleGoldenDifference {
     let document = try DOMUtils.parse(preprocessedHTML)
     Cleaner.removeUnsafeElements(from: document)
     let extracted = try #require(try ContentExtractor.grabArticle(document, options: options).get())
-    let lightHTML = try Cleaner.cleanArticleContentLight(extracted, baseURL: nil).get()
+    let lightHTML = try Cleaner.cleanArticleContentLight(extracted).get()
     let preparedHTML = PostProcessor.prepArticle(
         lightHTML,
         cleanStyles: options.cleanStyles,
@@ -86,7 +86,7 @@ private struct ArticleGoldenDifference {
         keepClasses: options.keepClasses,
         classesToPreserve: options.classesToPreserve
     )
-    let cleanedHTML = try Cleaner.cleanArticleContent(preparedHTML, baseURL: nil).get()
+    let cleanedHTML = try Cleaner.cleanArticleContent(preparedHTML).get()
 
     let stageLengths = [extracted, lightHTML, preparedHTML, cleanedHTML].map(normalizedArticleGoldenHTMLLength)
     #expect(stageLengths.allSatisfy { $0 >= 1_000 })

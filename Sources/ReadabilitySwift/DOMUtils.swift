@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSoup
 
 enum DOMUtils {
@@ -22,7 +21,7 @@ enum DOMUtils {
     }
 
     static func getInnerText(_ element: Element, normalizeSpaces: Bool = true) -> String {
-        let value = textContent(element).trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = textContent(element).trimmed()
         return normalizeSpaces ? normalizeWhitespace(value) : value
     }
 
@@ -33,7 +32,7 @@ enum DOMUtils {
     static func classAndID(_ element: Element) -> String {
         let className = (try? element.attr("class")) ?? ""
         let id = (try? element.attr("id")) ?? ""
-        return "\(className) \(id)".trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(className) \(id)".trimmed()
     }
 
     static func linkDensity(_ element: Element) -> Double {
@@ -43,7 +42,7 @@ enum DOMUtils {
             let href = (try? link.attr("href")) ?? ""
             // readabilityrs discounts hash-only anchors because they are
             // usually in-page navigation rather than article links.
-            total += Double(getInnerText(link, normalizeSpaces: false).utf8.count) * (href.range(of: Constants.regexps.hashURL, options: .regularExpression) != nil ? 0.3 : 1.0)
+            total += Double(getInnerText(link, normalizeSpaces: false).utf8.count) * (href.hasPrefix("#") && href.count > 1 ? 0.3 : 1.0)
         }
         return linkText / Double(text.utf8.count)
     }
@@ -90,12 +89,12 @@ enum DOMUtils {
 
     static func articleDirection(_ document: Document) -> String? {
         guard let html = (try? document.select("html"))?.first else { return nil }
-        let value = ((try? html.attr("dir")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let value = ((try? html.attr("dir")) ?? "").trimmed().lowercased()
         return ["ltr", "rtl", "auto"].contains(value) ? value : nil
     }
 
     static func normalizeWhitespace(_ value: String) -> String {
-        value.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
+        value.collapsingRepeatedWhitespace()
     }
 
     static func elementTextLength(_ html: String) -> Int {

@@ -22,11 +22,10 @@ enum MetadataExtractor {
         guard let scripts = try? document.select("script[type='application/ld+json']") else { return metadata }
 
         for script in scripts {
-            guard let source = try? script.html(),
-                  let data = source
-                    .replacingOccurrences(of: "^\\s*<!\\[CDATA\\[", with: "", options: [.regularExpression, .caseInsensitive])
-                    .replacingOccurrences(of: "\\]\\]>\\s*$", with: "", options: [.regularExpression, .caseInsensitive])
-                    .trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+            guard let source = try? script.html() else { continue }
+            let withoutCDATAStart = SwiftRegex.replacing(in: source, pattern: "^\\s*<!\\[CDATA\\[", with: "", caseInsensitive: true)
+            let cleanedSource = SwiftRegex.replacing(in: withoutCDATAStart, pattern: "\\]\\]>\\s*$", with: "", caseInsensitive: true).trimmed()
+            guard let data = cleanedSource.data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: data) else { continue }
             // readabilityrs traverses serde_json::Value. Foundation exposes an
             // untyped Any graph instead, so articleDictionary and the helpers
@@ -38,18 +37,18 @@ enum MetadataExtractor {
             let headline = string(value["headline"])
             let publisherName = (value["publisher"] as? [String: Any]).flatMap { string($0["name"]) }
             if metadata.title == nil {
-                if let name, let publisherName, name.trimmingCharacters(in: .whitespacesAndNewlines) == publisherName.trimmingCharacters(in: .whitespacesAndNewlines) {
-                    metadata.title = headline?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let name, let publisherName, name.trimmed() == publisherName.trimmed() {
+                    metadata.title = headline?.trimmed()
                 } else {
-                    metadata.title = (name ?? headline)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    metadata.title = (name ?? headline)?.trimmed()
                 }
             }
             if metadata.byline == nil { metadata.byline = authorName(value["author"]) }
-            if metadata.excerpt == nil { metadata.excerpt = string(value["description"])?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if metadata.excerpt == nil { metadata.excerpt = string(value["description"])?.trimmed() }
             if metadata.siteName == nil, let publisher = value["publisher"] as? [String: Any] {
-                metadata.siteName = string(publisher["name"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+                metadata.siteName = string(publisher["name"])?.trimmed()
             }
-            if metadata.publishedTime == nil { metadata.publishedTime = string(value["datePublished"])?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if metadata.publishedTime == nil { metadata.publishedTime = string(value["datePublished"])?.trimmed() }
             if metadata.image == nil { metadata.image = imageURL(value["image"]) ?? string(value["thumbnailUrl"]) }
         }
         return metadata
@@ -62,7 +61,7 @@ enum MetadataExtractor {
         for meta in metaTags {
             let name = ((try? meta.attr("name")) ?? "").lowercased()
             let property = ((try? meta.attr("property")) ?? "").lowercased()
-            let content = (try? meta.attr("content"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let content = (try? meta.attr("content"))?.trimmed() ?? ""
             guard !content.isEmpty else { continue }
             for key in property.split(whereSeparator: { $0.isWhitespace }) where !key.isEmpty {
                 let propertyName = String(key).lowercased()
@@ -115,12 +114,12 @@ enum MetadataExtractor {
         if metadata.title == nil { metadata.title = "" }
         metadata.title = metadata.title.map(Utils.unescapeHTMLEntities)
         metadata.excerpt = metadata.excerpt.map(Utils.unescapeHTMLEntities).flatMap { value in
-            let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = value.trimmed()
             return cleaned.isEmpty || Utils.looksLikeBracketMenu(cleaned) ? nil : cleaned
         }
         metadata.siteName = metadata.siteName.map(Utils.unescapeHTMLEntities)
         metadata.publishedTime = metadata.publishedTime.map(Utils.unescapeHTMLEntities)
-        metadata.image = metadata.image.map { Utils.unescapeHTMLEntities($0).trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap(nonEmpty)
+        metadata.image = metadata.image.map { Utils.unescapeHTMLEntities($0).trimmed() }.flatMap(nonEmpty)
         if let byline = metadata.byline, let siteName = metadata.siteName, Utils.isBylineRedundantWithSiteName(byline, siteName: siteName) {
             metadata.byline = nil
         }
@@ -221,7 +220,7 @@ enum MetadataExtractor {
     private static func cleanedCandidateText(_ element: Element) -> String {
         let raw = buildBylineText(element)
         let names = childAuthorNames(element)
-        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = raw.trimmed()
         if !names.isEmpty && shouldPreferChildNames(element, names: names, raw: raw) {
             return unique(names).joined(separator: ", ")
         }
@@ -231,11 +230,11 @@ enum MetadataExtractor {
     private static func childAuthorNames(_ element: Element) -> [String] {
         var names: [String] = []
         names.append(contentsOf: ((try? element.select("[itemprop=name], [itemprop~=name]")) ?? SwiftSoup.Elements())
-            .map { DOMUtils.getInnerText($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { DOMUtils.getInnerText($0).trimmed() }
             .filter { !$0.isEmpty })
 
         for anchor in (try? element.select("a")) ?? SwiftSoup.Elements() {
-            let name = DOMUtils.getInnerText(anchor).trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = DOMUtils.getInnerText(anchor).trimmed()
             guard !name.isEmpty, Utils.looksLikeAuthorName(name) else { continue }
             let href = ((try? anchor.attr("href")) ?? "").lowercased()
             guard !href.hasPrefix("mailto:"), !href.contains("twitter.com"), !href.contains("facebook.com"), !href.contains("linkedin.com") else { continue }
@@ -258,28 +257,20 @@ enum MetadataExtractor {
         if section.contains("author") { return true }
 
         var normalized = raw.lowercased()
-        for name in names { normalized = normalized.replacingOccurrences(of: name.lowercased(), with: " ") }
+        for name in names { normalized = normalized.replacing(name.lowercased(), with: " ") }
         normalized = normalized
-            .replacingOccurrences(of: "\u{00a0}", with: " ")
-            .replacingOccurrences(of: "\u{200B}", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-        normalized = normalized.replacingOccurrences(of: ".", with: " ")
-            .replacingOccurrences(of: ",", with: " ")
-            .replacingOccurrences(of: "–", with: " ")
-            .replacingOccurrences(of: "—", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "|", with: " ")
-            .replacingOccurrences(of: ":", with: " ")
-            .replacingOccurrences(of: ";", with: " ")
-            .replacingOccurrences(of: "/", with: " ")
-            .replacingOccurrences(of: "(", with: " ")
-            .replacingOccurrences(of: ")", with: " ")
+            .replacing("\u{00a0}", with: " ")
+            .replacing("\u{200B}", with: " ")
+            .replacing("\r", with: " ")
+            .replacing("\n", with: " ")
+        for separator in ".,–—-|:;/()" {
+            normalized = normalized.replacing(String(separator), with: " ")
+        }
         let tokens = normalized.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         if tokens.isEmpty { return true }
         let jobKeywords = ["reporter", "editor", "writer", "staff", "senior", "technologist", "correspondent", "columnist", "analyst", "producer", "anchor", "bureau", "desk", "spokesman", "spokeswoman", "spokesperson", "contributor", "team", "author"]
         if tokens.contains(where: jobKeywords.contains) { return true }
-        let semanticName = ((try? element.attr("itemprop")) ?? "").split(whereSeparator: { $0.isWhitespace }).contains { $0.caseInsensitiveCompare("name") == .orderedSame }
+        let semanticName = ((try? element.attr("itemprop")) ?? "").split(whereSeparator: { $0.isWhitespace }).contains { $0.lowercased() == "name" }
             || (try? element.select("[itemprop='name'], [itemprop~=name]").isEmpty == false) == true
         return semanticName && tokens.allSatisfy { $0 == "by" }
     }
@@ -297,7 +288,7 @@ enum MetadataExtractor {
     }
 
     private static func canonicalName(_ name: String) -> String? {
-        let normalized = name.lowercased().replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ".", with: ":")
+        let normalized = name.lowercased().replacing(" ", with: "").replacing(".", with: ":")
         let suffixes = ["author", "author_name", "creator", "pub-date", "description", "title", "site_name", "image", "thumbnail"]
         if suffixes.contains(normalized) { return normalized }
         if normalized.hasPrefix("parsely-") {
@@ -338,7 +329,7 @@ enum MetadataExtractor {
 
     private static func unique(_ values: [String]) -> [String] {
         var result: [String] = []
-        for value in values where !result.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) { result.append(value) }
+        for value in values where !result.contains(where: { $0.lowercased() == value.lowercased() }) { result.append(value) }
         return result
     }
 
@@ -384,34 +375,34 @@ enum MetadataExtractor {
     }
 
     private static func looksLikeCapsAuthor(_ text: String) -> Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = text.trimmed()
         guard value.contains(where: { $0.isWhitespace }) else { return false }
         let letters = value.filter(\.isLetter)
         guard letters.count >= 3 else { return false }
         let noise = ["views", "view", "votes", "vote", "post", "posts", "yes", "no", "hot", "stats", "trending", "share", "sections"]
-        guard !value.split(whereSeparator: { $0.isWhitespace }).contains(where: { noise.contains(String($0).trimmingCharacters(in: .punctuationCharacters).lowercased()) }) else { return false }
+        guard !value.split(whereSeparator: { $0.isWhitespace }).contains(where: { noise.contains($0.trimmed(where: \.isPunctuation).lowercased()) }) else { return false }
         return letters.filter(\.isUppercase).count * 10 >= letters.count * 8
     }
 
     private static func looksLikeDateline(_ text: String) -> Bool {
-        let value = text.trimmingCharacters(in: CharacterSet(charactersIn: "-–— "))
+        let value = text.trimmed { "-–— ".contains($0) }
         guard value.utf8.count <= 40, !value.isEmpty else { return false }
         let words = value.split(whereSeparator: { $0.isWhitespace || $0 == "," || $0 == "—" || $0 == "-" })
         return !words.isEmpty && words.allSatisfy { !$0.contains(where: { $0.isLowercase }) && $0.contains(where: { $0.isLetter }) }
     }
 
     private static func shouldPreferDOMByline(existing: String, dom: String, highConfidence: Bool) -> Bool {
-        let existingValue = existing.trimmingCharacters(in: .whitespacesAndNewlines)
-        let domValue = dom.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard existingValue.caseInsensitiveCompare(domValue) != .orderedSame else { return false }
+        let existingValue = existing.trimmed()
+        let domValue = dom.trimmed()
+        guard existingValue.lowercased() != domValue.lowercased() else { return false }
         if Utils.isBylineOrganizationCredit(existingValue) && !Utils.isBylineOrganizationCredit(domValue) { return true }
         if looksLikeDateline(existingValue) && !looksLikeDateline(domValue) { return true }
         if highConfidence && looksLikeCapsAuthor(domValue) && !looksLikeCapsAuthor(existingValue) { return true }
         let lowerExisting = existingValue.lowercased()
         let lowerDOM = domValue.lowercased()
         guard lowerDOM.contains(lowerExisting) else { return false }
-        let remainder = lowerDOM.replacingOccurrences(of: lowerExisting, with: "")
-        let ignored = remainder.replacingOccurrences(of: #"[|_\-–—,.:()\[\]{}"']"#, with: " ", options: .regularExpression)
+        let remainder = lowerDOM.replacing(lowerExisting, with: "")
+        let ignored = SwiftRegex.replacing(in: remainder, pattern: #"[|_\-–—,.:()\[\]{}"']"#, with: " ")
             .split(whereSeparator: { $0.isWhitespace })
             .filter { token in
                 let value = String(token)
@@ -460,10 +451,10 @@ enum MetadataExtractor {
 
     private static func hasSchemaContext(_ value: Any?) -> Bool {
         if let context = value as? String {
-            return context.range(of: #"^https?://schema\.org/?$"#, options: .regularExpression) != nil
+            return SwiftRegex.contains(context, pattern: #"^https?://schema\.org/?$"#)
         }
         if let context = value as? [String: Any], let vocabulary = context["@vocab"] as? String {
-            return vocabulary.range(of: #"^https?://schema\.org/?$"#, options: .regularExpression) != nil
+            return SwiftRegex.contains(vocabulary, pattern: #"^https?://schema\.org/?$"#)
         }
         return false
     }
@@ -472,7 +463,7 @@ enum MetadataExtractor {
         guard let type = value as? String else { return false }
         return Constants.regexps.jsonLDArticleTypes
             .split(separator: "|")
-            .contains { type.caseInsensitiveCompare(String($0)) == .orderedSame }
+            .contains { type.lowercased() == $0.lowercased() }
     }
 
     private static func string(_ value: Any?) -> String? {
@@ -506,27 +497,27 @@ enum MetadataExtractor {
     }
 
     private static func extractTitleFromDocument(_ document: Document) -> String? {
-        guard let original = nonEmpty(try? document.title())?.trimmingCharacters(in: .whitespacesAndNewlines), !original.isEmpty else { return nil }
+        guard let original = nonEmpty(try? document.title())?.trimmed(), !original.isEmpty else { return nil }
         var current = original
         let separatorPattern = "\\s(?:\\||-|–|—|\\\\|/|>|»)\\s"
-        let separatorMatches = (try? NSRegularExpression(pattern: separatorPattern))?.matches(in: original, range: NSRange(original.startIndex..., in: original)) ?? []
+        let separatorMatches = SwiftRegex.ranges(in: original, pattern: separatorPattern)
         var hadHierarchicalSeparator = false
         if !separatorMatches.isEmpty {
-            hadHierarchicalSeparator = original.range(of: "\\s[\\\\/>»]\\s", options: .regularExpression) != nil
-            if let last = separatorMatches.last, let end = Range(NSRange(location: last.range.location, length: last.range.length), in: original) {
-                current = String(original[..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            hadHierarchicalSeparator = SwiftRegex.contains(original, pattern: "\\s[\\\\/>»]\\s")
+            if let end = separatorMatches.last {
+                current = String(original[..<end.lowerBound]).trimmed()
                 if wordCount(current) < 3 {
-                    current = original.replacingOccurrences(of: "(?i)^[^\\|\\-–—\\\\/>»]*[\\|\\-–—\\\\/>»]", with: "", options: .regularExpression)
+                    current = SwiftRegex.replacing(in: original, pattern: "^[^\\|\\-–—\\\\/>»]*[\\|\\-–—\\\\/>»]", with: "", caseInsensitive: true)
                 }
             }
         } else if current.contains(": ") {
             let headingMatches = ((try? document.select("h1,h2")) ?? SwiftSoup.Elements()).map { DOMUtils.getInnerText($0) }
             if !headingMatches.contains(where: { $0 == current }) {
                 if let colon = current.lastIndex(of: ":") {
-                    let suffix = String(current[current.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let suffix = String(current[current.index(after: colon)...]).trimmed()
                     if wordCount(suffix) < 3, let first = current.firstIndex(of: ":") {
                         let before = String(current[..<first])
-                        current = wordCount(before) > 5 ? original : String(current[current.index(after: first)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        current = wordCount(before) > 5 ? original : String(current[current.index(after: first)...]).trimmed()
                     } else {
                         current = suffix
                     }
@@ -538,7 +529,7 @@ enum MetadataExtractor {
         }
         current = Utils.normalizeWhitespace(current)
         if wordCount(current) <= 4 {
-            let originalWordCount = wordCount(original.replacingOccurrences(of: separatorPattern, with: " ", options: .regularExpression))
+            let originalWordCount = wordCount(SwiftRegex.replacing(in: original, pattern: separatorPattern, with: " "))
             if !hadHierarchicalSeparator || wordCount(current) != originalWordCount - 1 { current = original }
         }
         return current

@@ -10,10 +10,10 @@ enum Utils {
         let rawScheme = trimmed[..<colon]
         guard !rawScheme.contains(where: { "/?#".contains($0) }) else { return false }
         let scheme = rawScheme.filter { !$0.isWhitespace && !($0.isASCII && $0.asciiValue.map({ $0 < 32 }) == true) }
-        if scheme.caseInsensitiveCompare("javascript") == .orderedSame || scheme.caseInsensitiveCompare("vbscript") == .orderedSame {
+        if ["javascript", "vbscript"].contains(scheme.lowercased()) {
             return true
         }
-        if scheme.caseInsensitiveCompare("data") == .orderedSame {
+        if scheme.lowercased() == "data" {
             let rest = trimmed[trimmed.index(after: colon)...]
             return !rest.lowercased().hasPrefix("image/")
         }
@@ -21,34 +21,29 @@ enum Utils {
     }
 
     static func unescapeHTMLEntities(_ text: String) -> String {
-        var result = text.replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&apos;", with: "'")
-            .replacingOccurrences(of: "&#39;", with: "'")
+        let result = text.replacing("&lt;", with: "<")
+            .replacing("&gt;", with: ">")
+            .replacing("&amp;", with: "&")
+            .replacing("&quot;", with: "\"")
+            .replacing("&apos;", with: "'")
+            .replacing("&#39;", with: "'")
 
         // Rust's html_entities decoder handles both decimal and hexadecimal
         // numeric references. Replacing from the end keeps ranges valid.
-        guard let regex = try? NSRegularExpression(pattern: "&#(?:x([0-9a-fA-F]+)|([0-9]+));", options: []) else {
-            return result
-        }
-        let range = NSRange(result.startIndex..<result.endIndex, in: result)
-        for match in regex.matches(in: result, range: range).reversed() {
-            let hex = Range(match.range(at: 1), in: result).map { String(result[$0]) }
-            let decimal = Range(match.range(at: 2), in: result).map { String(result[$0]) }
+        return SwiftRegex.replacingMatches(
+            in: result,
+            pattern: "&#(?:x([0-9a-fA-F]+)|([0-9]+));"
+        ) { captures in
+            let hex = captures.indices.contains(1) ? captures[1].map(String.init) : nil
+            let decimal = captures.indices.contains(2) ? captures[2].map(String.init) : nil
             let scalar = (hex.flatMap { UInt32($0, radix: 16) } ?? decimal.flatMap { UInt32($0, radix: 10) })
                 .flatMap(Unicode.Scalar.init)
-            guard let scalar else { continue }
-            let replacement = String(Character(scalar))
-            guard let replacementRange = Range(match.range, in: result) else { continue }
-            result.replaceSubrange(replacementRange, with: replacement)
+            return scalar.map { String(Character($0)) }
         }
-        return result
     }
 
     static func normalizeWhitespace(_ text: String) -> String {
-        text.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
+        text.collapsingRepeatedWhitespace()
     }
 
     static func isURL(_ value: String) -> Bool {
@@ -56,18 +51,18 @@ enum Utils {
         // url::Url::parse here, so require an explicit RFC-style scheme to keep
         // relative author links from being mistaken for metadata URLs.
         guard let url = URL(string: value), let scheme = url.scheme, !scheme.isEmpty else { return false }
-        return scheme.range(of: "^[A-Za-z][A-Za-z0-9+.-]*$", options: .regularExpression) != nil
+        return SwiftRegex.contains(scheme, pattern: "^[A-Za-z][A-Za-z0-9+.-]*$")
     }
 
     static func looksLikeByline(_ text: String) -> Bool {
-        let value = normalizeWhitespace(text).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard value.range(of: "^(by|par)[\\s,:\\-–—]+", options: [.regularExpression, .caseInsensitive]) != nil else { return false }
-        let remainder = value.replacingOccurrences(of: "^(by|par)[\\s,:\\-–—]+", with: "", options: [.regularExpression, .caseInsensitive])
+        let value = normalizeWhitespace(text).trimmed()
+        guard SwiftRegex.contains(value, pattern: "^(by|par)[\\s,:\\-–—]+", caseInsensitive: true) else { return false }
+        let remainder = SwiftRegex.replacing(in: value, pattern: "^(by|par)[\\s,:\\-–—]+", with: "", caseInsensitive: true)
         return remainder.first?.isUppercase == true
     }
 
     static func looksLikeAuthorName(_ text: String) -> Bool {
-        let value = normalizeWhitespace(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = normalizeWhitespace(text).trimmed()
         guard !value.isEmpty, value.utf8.count <= 80, value.contains(where: { $0.isWhitespace }), value.allSatisfy({ !$0.isNumber }) else { return false }
         let lower = value.lowercased()
         guard !lower.contains("@"), !lower.hasPrefix("follow ") else { return false }
@@ -76,15 +71,15 @@ enum Utils {
     }
 
     static func looksLikeBracketMenu(_ text: String) -> Bool {
-        var remainder = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var remainder = text.trimmed()
         guard remainder.first == "[" else { return false }
         var matched = 0
         while remainder.first == "[" {
             guard let end = remainder.firstIndex(of: "]") else { break }
-            let token = remainder[remainder.index(after: remainder.startIndex)..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            let token = remainder[remainder.index(after: remainder.startIndex)..<end].trimmed()
             guard !token.isEmpty else { return false }
             matched += 1
-            remainder = String(remainder[remainder.index(after: end)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            remainder = String(remainder[remainder.index(after: end)...]).trimmed()
         }
         guard matched >= 2 else { return false }
         return remainder.isEmpty || remainder.hasPrefix("Versions") || remainder.allSatisfy { $0.isNumber || $0.isWhitespace }
@@ -97,33 +92,35 @@ enum Utils {
     }
 
     static func cleanBylineTextWithReason(_ text: String) -> CleanBylineOutcome {
-        var value = text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{00a0}\u{200B}\u{FEFF}")))
+        let invisibleCharacters: Set<Character> = ["\u{00a0}", "\u{200B}", "\u{FEFF}"]
+        var value = text.trimmed { $0.isWhitespace || invisibleCharacters.contains($0) }
         guard !value.isEmpty else { return .dropped }
-        value = value.trimmingCharacters(in: CharacterSet(charactersIn: "-–—|•:;,. "))
-        value = value.replacingOccurrences(of: "\r\n", with: "\n")
+        value = value.trimmed { "-–—|•:;,. ".contains($0) }
+        value = value.replacing("\r\n", with: "\n")
         value = collapseBlankLinesPreserveIndent(value)
         guard !value.isEmpty else { return .dropped }
         let hasAuthorSegment = containsAuthorLikeSegment(value)
         if hasAuthorSegment {
             value = stripTrailingDateClause(value)
-            value = value.components(separatedBy: .newlines).filter { !looksLikeLiveTimestamp($0) }.joined(separator: "\n")
+            value = value.lines().map(String.init).filter { !looksLikeLiveTimestamp($0) }.joined(separator: "\n")
         }
-        value = value.components(separatedBy: .newlines).filter { !looksLikeSocialHandle($0) }.joined(separator: "\n")
+        value = value.lines().map(String.init).filter { !looksLikeSocialHandle($0) }.joined(separator: "\n")
         if value.lowercased().hasPrefix("posted by") || value.lowercased().hasPrefix("promoted by") { return .droppedOrganization }
         if value.contains("@") || value.lowercased().contains("follow @") { return .dropped }
         if looksLikeBracketMenu(value) { return .dropped }
         if !value.contains(where: { $0.isLetter }) { return .dropped }
         if isBylineOrganizationCredit(value) || looksLikeNavigationMenu(value) { return .droppedOrganization }
-        return .accepted(value.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{00a0}\u{200B}\u{FEFF}"))))
+        return .accepted(value.trimmed { $0.isWhitespace || invisibleCharacters.contains($0) })
     }
 
     private static func containsAuthorLikeSegment(_ text: String) -> Bool {
         if looksLikeAuthorName(text) { return true }
-        for line in text.components(separatedBy: .newlines) {
+        for lineSlice in text.lines() {
+            let line = String(lineSlice)
             let pieces = line.split(whereSeparator: { "|/•·".contains($0) })
             if pieces.contains(where: { looksLikeAuthorName(String($0)) }) { return true }
             for separator in [" - ", " – ", " — "] where line.contains(separator) {
-                if line.components(separatedBy: separator).contains(where: looksLikeAuthorName) { return true }
+                if line.split(separator: separator, omittingEmptySubsequences: false).map(String.init).contains(where: looksLikeAuthorName) { return true }
             }
         }
         return false
@@ -133,8 +130,9 @@ enum Utils {
         var result = ""
         var pendingIndent: String?
         var wroteLine = false
-        for line in text.components(separatedBy: "\n") {
-            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        for lineSlice in text.lines() {
+            let line = String(lineSlice)
+            if line.trimmed().isEmpty {
                 if pendingIndent == nil && !line.isEmpty { pendingIndent = line }
                 continue
             }
@@ -159,7 +157,7 @@ enum Utils {
 
     private static func looksLikeNavigationMenu(_ text: String) -> Bool {
         if text.filter({ $0 == "|" }).count >= 2 { return true }
-        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let lines = text.lines().map { $0.trimmed() }.filter { !$0.isEmpty }
         guard lines.count >= 2 else { return false }
         return lines.allSatisfy { line in
             let words = line.split(whereSeparator: { $0.isWhitespace })
@@ -172,7 +170,7 @@ enum Utils {
     }
 
     private static func looksLikeSocialHandle(_ text: String) -> Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let value = text.trimmed().lowercased()
         if value.isEmpty { return false }
         if value.hasPrefix("@") || value.contains(" @") || value.contains("twitter.com/") || value.contains("facebook.com/") { return true }
         if value.hasPrefix("follow ") && value.contains("@") { return true }
@@ -184,15 +182,15 @@ enum Utils {
     private static func stripTrailingDateClause(_ text: String) -> String {
         let lower = text.lowercased()
         for separator in [" | ", " - ", " – ", " — ", " · "] {
-            guard let index = lower.range(of: separator, options: .backwards) else { continue }
+            guard let index = lower.lastRange(of: separator) else { continue }
             let suffix = lower[index.upperBound...]
-            if looksLikeDateOrTime(String(suffix)) { return String(text[..<index.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines) }
+            if looksLikeDateOrTime(String(suffix)) { return String(text[..<index.lowerBound]).trimmed() }
         }
         return text
     }
 
     private static func looksLikeDateOrTime(_ text: String) -> Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let value = text.trimmed().lowercased()
         let hasDigit = value.contains(where: { $0.isNumber })
         let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec", "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december"]
         let mentionsMonth = months.contains(where: value.contains)
@@ -203,7 +201,7 @@ enum Utils {
     }
 
     private static func looksLikeLiveTimestamp(_ text: String) -> Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let value = text.trimmed().lowercased()
         if value.contains("ago") || value.contains("updated") || value.contains("update") || value.contains("yesterday") || value.contains("today") { return true }
         let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec", "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december"]
         if months.contains(where: value.contains) { return false }
@@ -221,8 +219,8 @@ enum Utils {
         let author = normalizeWhitespace(byline).lowercased()
         let site = normalizeWhitespace(siteName).lowercased()
         guard author.count >= 3, let range = site.range(of: author) else { return false }
-        let prefix = site[..<range.lowerBound].trimmingCharacters(in: CharacterSet(charactersIn: ":-–—|• "))
-        let suffix = site[range.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: ":-–—|• "))
+        let prefix = site[..<range.lowerBound].trimmed { ":-–—|• ".contains($0) }
+        let suffix = site[range.upperBound...].trimmed { ":-–—|• ".contains($0) }
         return prefix.hasSuffix("by") || suffix.hasPrefix("by")
     }
 
@@ -230,9 +228,9 @@ enum Utils {
         guard let siteName, !siteName.isEmpty else { return title }
         let separators = [" | ", " - ", " — ", " – ", " :: "]
         for separator in separators {
-            let parts = title.components(separatedBy: separator)
-            if parts.count > 1, parts.last?.localizedCaseInsensitiveCompare(siteName) == .orderedSame {
-                return parts.dropLast().joined(separator: separator).trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = title.split(separator: separator, omittingEmptySubsequences: false).map(String.init)
+            if parts.count > 1, parts.last?.lowercased() == siteName.lowercased() {
+                return parts.dropLast().joined(separator: separator).trimmed()
             }
         }
         return title

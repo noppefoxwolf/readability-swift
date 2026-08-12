@@ -1,6 +1,6 @@
 enum MarkdownLinkRules {
     static func link(inner: String, href: String, title: String, options: MarkdownOptions, state: inout MarkdownConversionState) -> String {
-        let trimmed = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = inner.trimmed()
         guard !href.isEmpty else { return trimmed }
         if options.sanitizeURLs && Utils.isDangerousURL(href) { return trimmed }
         let text = trimmed.isEmpty ? href : trimmed

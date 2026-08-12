@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSoup
 
 enum ElementMath {
@@ -33,17 +32,17 @@ enum ElementMath {
             if !value.isEmpty { return value }
         }
         if let annotation = try? element.select("annotation[encoding=\"application/x-tex\"]").first() {
-            let value = DOMUtils.textContent(annotation).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = DOMUtils.textContent(annotation).trimmed()
             if !value.isEmpty { return value }
         }
         if let script = try? element.select("script[type=\"math/tex\"]").first() {
-            let value = DOMUtils.textContent(script).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = DOMUtils.textContent(script).trimmed()
             if !value.isEmpty { return value }
         }
         return nil
     }
 
     private static func escape(_ value: String) -> String {
-        value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        value.replacing("&", with: "&amp;").replacing("\"", with: "&quot;").replacing("<", with: "&lt;").replacing(">", with: "&gt;")
     }
 }

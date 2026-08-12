@@ -1,31 +1,19 @@
-import Foundation
-
 enum ElementImages {
     static func standardize(_ html: String) -> String {
         // Keep this as a source-text rewrite like readabilityrs. Parsing and
         // reserializing an img through SwiftSoup can change quote style,
         // attribute order, and void-tag spelling before the Markdown pipeline.
         let pattern = "(?is)<img\\b[^>]*>"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return html }
-        var result = html
-        // NSRegularExpression ranges are UTF-16 offsets into the original
-        // string. Replacing from the end keeps all remaining offsets valid.
-        let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
-        for match in matches {
-            guard let range = Range(match.range, in: html) else { continue }
-            let original = String(html[range])
-            guard let replacement = standardizeTag(original) else { continue }
-            if let resultRange = Range(NSRange(location: match.range.location, length: match.range.length), in: result) {
-                result.replaceSubrange(resultRange, with: replacement)
-            }
+        return SwiftRegex.replacingMatches(in: html, pattern: pattern) { captures in
+            guard let original = captures.first.flatMap({ $0 }) else { return nil }
+            return standardizeTag(String(original))
         }
-        return result
     }
 
     static func pickBestSrcset(_ srcset: String) -> String? {
         var best: (url: String, value: Double)?
         for rawEntry in srcset.split(separator: ",") {
-            let entry = rawEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+            let entry = rawEntry.trimmed()
             let parts = entry.split(whereSeparator: { $0 == " " || $0 == "\t" })
             guard let url = parts.first, !url.isEmpty else { continue }
             let descriptor = parts.dropFirst().first.map(String.init) ?? ""
@@ -47,7 +35,7 @@ enum ElementImages {
         let src = attribute("src", in: result) ?? ""
         let dataSrc = attribute("data-src", in: result) ?? attribute("data-lazy-src", in: result) ?? ""
         if (src.isEmpty || isPlaceholder(src)) && !dataSrc.isEmpty {
-            if src.isEmpty { result = result.replacingOccurrences(of: "<img", with: "<img src=\"\(escape(dataSrc))\"", options: [.caseInsensitive]) }
+            if src.isEmpty { result = result.replacingLiteral("<img", with: "<img src=\"\(escape(dataSrc))\"", caseInsensitive: true) }
             else { result = replaceAttribute("src", old: src, new: dataSrc, in: result) }
         }
         let srcset = attribute("srcset", in: result) ?? ""
@@ -61,26 +49,26 @@ enum ElementImages {
 
     private static func isPlaceholder(_ source: String) -> Bool {
         if source.contains("placeholder") || source.contains("blank.gif") || source.contains("spacer.gif") { return true }
-        guard source.range(of: "^data:image/(gif|png|jpeg|svg);base64,[A-Za-z0-9+/=]{0,200}$", options: [.regularExpression, .caseInsensitive]) != nil else { return false }
-        return true
+        return SwiftRegex.contains(source, pattern: "^data:image/(gif|png|jpeg|svg);base64,[A-Za-z0-9+/=]{0,200}$", caseInsensitive: true)
     }
 
     private static func attribute(_ name: String, in tag: String) -> String? {
         let pattern = "(?i)(?:^|\\s)\(name)=([\"'])(.*?)\\1"
-        guard let regex = try? NSRegularExpression(pattern: pattern), let match = regex.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)), let range = Range(match.range(at: 2), in: tag) else { return nil }
-        return String(tag[range])
+        guard let captures = SwiftRegex.captures(in: tag, pattern: pattern),
+              captures.indices.contains(2), let value = captures[2] else { return nil }
+        return String(value)
     }
 
     private static func replaceAttribute(_ name: String, old: String, new: String, in tag: String) -> String {
         guard !old.isEmpty else { return tag }
-        let pattern = "(?i)(\\s\(name)=)([\"'])" + NSRegularExpression.escapedPattern(for: old) + "([\"'])"
-        return tag.replacingOccurrences(of: pattern, with: "$1$2\(escape(new))$3", options: .regularExpression)
+        let pattern = "(\\s\(name)=)([\"'])" + SwiftRegex.escaped(old) + "([\"'])"
+        return SwiftRegex.replacing(in: tag, pattern: pattern, with: "$1$2\(escape(new))$3", caseInsensitive: true)
     }
 
     private static func escape(_ value: String) -> String {
-        value.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
+        value.replacing("&", with: "&amp;")
+            .replacing("\"", with: "&quot;")
+            .replacing("<", with: "&lt;")
+            .replacing(">", with: "&gt;")
     }
 }

@@ -26,5 +26,5 @@ enum MarkdownTableRules {
         return "\n\n\(row(headers))\n\(separator)\n\(rows.map(row).joined(separator: "\n"))\n"
     }
 
-    private static func escaped(_ value: String) -> String { value.replacingOccurrences(of: "|", with: "\\|") }
+    private static func escaped(_ value: String) -> String { value.replacing("|", with: "\\|") }
 }

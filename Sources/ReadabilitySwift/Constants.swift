@@ -1,5 +1,3 @@
-import Foundation
-
 struct RegexPatterns: Sendable {
     let unlikelyCandidates = "-ad-|ai2html|banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|footer|gdpr|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote"
     let okMaybeItsACandidate = "and|article|body|column|content|main|mathjax|shadow"

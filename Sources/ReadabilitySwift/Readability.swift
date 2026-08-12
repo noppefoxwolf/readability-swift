@@ -46,7 +46,7 @@ public final class Readability {
         }
 
         let lightHTML: String
-        switch Cleaner.cleanArticleContentLight(extracted, baseURL: baseURL) {
+        switch Cleaner.cleanArticleContentLight(extracted) {
         case let .success(value): lightHTML = value
         case let .failure(error): throw error
         }
@@ -62,7 +62,10 @@ public final class Readability {
             preparedHTML = PostProcessor.removeTitleFromContent(preparedHTML, title: title)
         }
         let cleanedHTML: String
-        switch Cleaner.cleanArticleContent(preparedHTML, baseURL: baseURL) {
+        switch Cleaner.cleanArticleContent(
+            preparedHTML,
+            allowedVideoRegex: options.allowedVideoRegex
+        ) {
         case let .success(value): cleanedHTML = value
         case let .failure(error): throw error
         }
@@ -118,7 +121,7 @@ public final class Readability {
         guard let document = try? DOMUtils.parse(html) else { return nil }
         guard let elements = try? document.select("p") else { return nil }
         for element in elements {
-            let value = rawText(from: element).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = rawText(from: element).trimmed()
             guard value.utf8.count >= 25 else { continue }
             guard !Utils.looksLikeBracketMenu(value) else { continue }
 
@@ -137,10 +140,10 @@ public final class Readability {
     }
 
     private func excerptFromText(_ text: String) -> String? {
-        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = text.trimmed()
         guard !cleaned.isEmpty else { return nil }
-        for paragraph in cleaned.components(separatedBy: "\n\n") {
-            let value = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+        for paragraph in SwiftRegex.split(cleaned, pattern: "\n\n") {
+            let value = paragraph.trimmed()
             guard value.utf8.count >= 80, !Utils.looksLikeBracketMenu(value) else { continue }
             return truncateText(value, maximumLength: 300)
         }
@@ -152,10 +155,10 @@ public final class Readability {
         guard let document = try? DOMUtils.parse(html), let elements = try? document.select("p") else { return nil }
         let normalizedExcerpt = excerpt.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         for element in elements {
-            let value = rawText(from: element).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = rawText(from: element).trimmed()
             let normalizedValue = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
             if normalizedValue == normalizedExcerpt {
-                return value.replacingOccurrences(of: "\\n[ \\t]+", with: "\n ", options: .regularExpression)
+                return SwiftRegex.replacing(in: value, pattern: "\\n[ \\t]+", with: "\n ")
             }
         }
         return nil
@@ -165,8 +168,8 @@ public final class Readability {
         let characters = Array(text)
         guard characters.count > maximumLength else { return text }
         let prefix = String(characters.prefix(maximumLength))
-        guard let boundary = prefix.lastIndex(where: { $0.isWhitespace }) else { return prefix.trimmingCharacters(in: .whitespacesAndNewlines) }
-        return String(prefix[..<boundary]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let boundary = prefix.lastIndex(where: { $0.isWhitespace }) else { return prefix.trimmed() }
+        return String(prefix[..<boundary]).trimmed()
     }
 
 }

@@ -20,7 +20,7 @@ public enum ElementLanguages {
     private static let known: Set<String> = ["python", "javascript", "typescript", "ruby", "rust", "go", "java", "kotlin", "scala", "swift", "dart", "elixir", "erlang", "haskell", "ocaml", "clojure", "clojurescript", "perl", "php", "lua", "r", "julia", "nim", "crystal", "shell", "powershell", "csharp", "fsharp", "vbnet", "objectivec", "objectivecpp", "cpp", "c", "zig", "ada", "fortran", "cobol", "pascal", "assembly", "verilog", "vhdl", "systemverilog", "sql", "html", "css", "scss", "sass", "less", "stylus", "xml", "json", "yaml", "toml", "markdown", "latex", "graphql", "protobuf", "dockerfile", "terraform", "nix", "makefile", "cmake", "batch", "vue", "svelte", "handlebars", "mustache", "ejs", "pug", "erb", "haml", "slim", "twig", "jinja2", "liquid", "diff", "wasm", "solidity", "matlab", "groovy", "coffeescript", "lisp", "scheme", "racket", "prolog", "sml", "ini", "csv", "restructuredtext", "applescript", "autohotkey"]
 
     public static func normalizeLanguage(_ language: String) -> String {
-        let value = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let value = language.trimmed().lowercased()
         return aliases[value] ?? value
     }
 

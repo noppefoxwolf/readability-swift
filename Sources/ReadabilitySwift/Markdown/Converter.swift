@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSoup
 
 enum MarkdownConverter {
@@ -8,7 +7,7 @@ enum MarkdownConverter {
         // parseFragment returns a node array rather than a common Element, so a
         // document body is used as the equivalent conversion root.
         guard let document = try? SwiftSoup.parse(standardized) else {
-            return standardized.replacingOccurrences(of: "(?is)<[^>]+>", with: "", options: .regularExpression)
+            return SwiftRegex.replacing(in: standardized, pattern: "(?is)<[^>]+>", with: "")
         }
         document.outputSettings().prettyPrint(pretty: false)
         guard let body = document.body() else { return "" }
@@ -21,7 +20,7 @@ enum MarkdownConverter {
         if !state.footnotes.isEmpty {
             output += MarkdownFootnoteRules.definitions(state.footnotes)
         }
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.trimmed()
     }
 
     private static func renderChildren(of element: Element, options: MarkdownOptions, state: inout MarkdownConversionState) -> String {
@@ -33,17 +32,17 @@ enum MarkdownConverter {
             // Element.text() would normalize this before the converter can
             // distinguish normal flow from a code block. scraper exposes raw
             // Node::Text, whose SwiftSoup counterpart is getWholeText().
-            return state.inCodeBlock ? text.getWholeText() : MarkdownTextRules.escape(text.getWholeText().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression))
+            return state.inCodeBlock ? text.getWholeText() : MarkdownTextRules.escape(SwiftRegex.replacing(in: text.getWholeText(), pattern: "\\s+", with: " "))
         }
         guard let element = node as? Element else { return "" }
         let tag = element.tagName().lowercased()
         if ["script", "style", "template", "noscript"].contains(tag) { return "" }
         if tag == "pre" {
             let code = rawText(element)
-                .replacingOccurrences(of: "\r\n", with: "\n")
-                .replacingOccurrences(of: "\r", with: "\n")
+                .replacing("\r\n", with: "\n")
+                .replacing("\r", with: "\n")
             let language = languageForCodeBlock(element)
-            return MarkdownCodeRules.codeBlock(code.trimmingCharacters(in: .whitespacesAndNewlines), language: language, options: options)
+            return MarkdownCodeRules.codeBlock(code.trimmed(), language: language, options: options)
         }
         if tag == "code" { return MarkdownTextRules.inlineCode(rawText(element)) }
         if tag == "br" { return state.inHeading ? " " : "  \n" }
@@ -80,7 +79,7 @@ enum MarkdownConverter {
             if state.inLink { return renderChildren(of: element, options: options, state: &state) }
             let href = (try? element.attr("href")) ?? ""
             if href.lowercased().hasPrefix("#fn:") || href.lowercased().hasPrefix("#fn-") || href.lowercased().hasPrefix("#footnote") {
-                let reference = ((try? element.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let reference = ((try? element.text()) ?? "").trimmed()
                 let id = reference.isEmpty ? href.split(separator: ":").last.map(String.init) ?? "1" : reference
                 return MarkdownFootnoteRules.reference(id)
             }
@@ -91,32 +90,32 @@ enum MarkdownConverter {
             return MarkdownLinkRules.link(inner: value, href: href, title: title, options: options, state: &state)
         }
         if tag == "strong" || tag == "b" {
-            let value = renderChildren(of: element, options: options, state: &state).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = renderChildren(of: element, options: options, state: &state).trimmed()
             return value.isEmpty ? "" : options.strongDelimiter + value + options.strongDelimiter
         }
         if tag == "em" || tag == "i" {
-            let value = renderChildren(of: element, options: options, state: &state).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = renderChildren(of: element, options: options, state: &state).trimmed()
             return value.isEmpty ? "" : String(options.emphasisDelimiter) + value + String(options.emphasisDelimiter)
         }
         if tag == "del" || tag == "s" || tag == "strike" {
-            let value = renderChildren(of: element, options: options, state: &state).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = renderChildren(of: element, options: options, state: &state).trimmed()
             return value.isEmpty ? "" : "~~\(value)~~"
         }
         if tag == "mark" {
-            let value = renderChildren(of: element, options: options, state: &state).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = renderChildren(of: element, options: options, state: &state).trimmed()
             return value.isEmpty ? "" : "==\(value)=="
         }
         if tag == "sup" {
             let id = ((try? element.attr("id")) ?? "").lowercased()
             if id.hasPrefix("fnref:") || id.hasPrefix("fnref-") {
-                let number = id.replacingOccurrences(of: "fnref:", with: "").replacingOccurrences(of: "fnref-", with: "")
+                let number = id.replacing("fnref:", with: "").replacing("fnref-", with: "")
                 return "[^\(number)]"
             }
-            let value = renderChildren(of: element, options: options, state: &state).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = renderChildren(of: element, options: options, state: &state).trimmed()
             return value.isEmpty ? "" : "^\(value)^"
         }
         if tag == "sub" {
-            let value = renderChildren(of: element, options: options, state: &state).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = renderChildren(of: element, options: options, state: &state).trimmed()
             return value.isEmpty ? "" : "~\(value)~"
         }
         if tag == "hr" { return "\n\n---\n\n" }
@@ -164,10 +163,10 @@ enum MarkdownConverter {
             // SwiftSoup Element.html() serializes only its children.
             return "\n\n\((try? element.outerHtml()) ?? "")\n\n"
         }
-        if tag == "dt" { return "\n\n**\(inner.trimmingCharacters(in: .whitespacesAndNewlines))**\n" }
-        if tag == "dd" { return ": \(inner.trimmingCharacters(in: .whitespacesAndNewlines))\n" }
+        if tag == "dt" { return "\n\n**\(inner.trimmed())**\n" }
+        if tag == "dd" { return ": \(inner.trimmed())\n" }
         if ["p", "div", "section", "article", "main", "tr", "td", "th"].contains(tag) {
-            let value = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = inner.trimmed()
             if value.isEmpty { return "" }
             return state.inListItem || state.inTable ? "\(value)\n" : "\n\n\(inner)\n\n"
         }
@@ -188,7 +187,7 @@ enum MarkdownConverter {
         let output = items.map { renderListItem($0, ordered: ordered, options: options, state: &state) }.joined()
         if ordered { state.orderedListCounters.removeLast() }
         state.listDepth -= 1
-        return state.listDepth == 0 ? "\n\n\(output.trimmingCharacters(in: .whitespacesAndNewlines))\n" : "\n\(output)"
+        return state.listDepth == 0 ? "\n\n\(output.trimmed())\n" : "\n\(output)"
     }
 
     private static func renderListItem(_ element: Element, ordered: Bool, options: MarkdownOptions, state: inout MarkdownConversionState) -> String {
@@ -203,7 +202,7 @@ enum MarkdownConverter {
         }
 
         let inner = renderChildren(of: element, options: options, state: &state)
-        guard !inner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !inner.trimmed().isEmpty else {
             if ordered, !state.orderedListCounters.isEmpty { state.orderedListCounters[state.orderedListCounters.count - 1] += 1 }
             return ""
         }
@@ -230,11 +229,11 @@ enum MarkdownConverter {
     private static func collectFootnotes(from element: Element, state: inout MarkdownConversionState) {
         for item in (try? element.select("li.footnote, li[id^=fn]")) ?? SwiftSoup.Elements() {
             let rawID = ((try? item.attr("id")) ?? "")
-                .replacingOccurrences(of: "fn:", with: "")
-                .replacingOccurrences(of: "fn-", with: "")
+                .replacing("fn:", with: "")
+                .replacing("fn-", with: "")
             guard !rawID.isEmpty else { continue }
             let content = MarkdownTextRules.escapeLinkText(
-                DOMUtils.normalizeWhitespace(DOMUtils.textContent(item).replacingOccurrences(of: "↩", with: ""))
+                DOMUtils.normalizeWhitespace(DOMUtils.textContent(item).replacing("↩", with: ""))
             )
             if !content.isEmpty { state.footnotes.append((rawID, content)) }
         }
@@ -260,7 +259,7 @@ enum MarkdownConverter {
         let rows = element.children().filter { $0.tagName().lowercased() == "tr" || $0.tagName().lowercased() == "thead" || $0.tagName().lowercased() == "tbody" }
             .flatMap { row in row.tagName().lowercased() == "tr" ? [row] : row.children().filter { $0.tagName().lowercased() == "tr" } }
         let values = rows.map { row in
-            row.children().filter { ["td", "th"].contains($0.tagName().lowercased()) }.map { renderChildren(of: $0, options: options, state: &state).trimmingCharacters(in: .whitespacesAndNewlines) }
+            row.children().filter { ["td", "th"].contains($0.tagName().lowercased()) }.map { renderChildren(of: $0, options: options, state: &state).trimmed() }
         }.filter { !$0.isEmpty }
         guard let first = values.first, !first.isEmpty else { return "" }
         let hasHeader = !((try? element.select("th")) ?? SwiftSoup.Elements()).isEmpty()
@@ -275,10 +274,10 @@ enum MarkdownConverter {
         // html5ever inserts an implicit tbody around direct tr children during
         // tree construction. SwiftSoup may retain direct rows, so add the
         // wrapper required by readabilityrs's raw complex-table output.
-        guard html.range(of: "<tbody", options: .caseInsensitive) == nil,
-              html.range(of: "<tr", options: .caseInsensitive) != nil,
+        guard html.firstRange(of: "<tbody", caseInsensitive: true) == nil,
+              html.firstRange(of: "<tr", caseInsensitive: true) != nil,
               let openingEnd = html.firstIndex(of: ">"),
-              let closingStart = html.range(of: "</table>", options: [.caseInsensitive, .backwards])?.lowerBound else {
+              let closingStart = html.lastRange(of: "</table>", caseInsensitive: true)?.lowerBound else {
             return html
         }
         let contentStart = html.index(after: openingEnd)
@@ -286,8 +285,10 @@ enum MarkdownConverter {
     }
 
     private static func normalizeOutput(_ value: String) -> String {
-        value.replacingOccurrences(of: "[ \\t]+\\n", with: "\n", options: .regularExpression)
-            .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        SwiftRegex.replacing(
+            in: SwiftRegex.replacing(in: value, pattern: "[ \\t]+\\n", with: "\n"),
+            pattern: "\\n{3,}",
+            with: "\n\n"
+        ).trimmed()
     }
 }

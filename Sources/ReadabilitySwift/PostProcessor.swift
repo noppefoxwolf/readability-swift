@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSoup
 
 enum PostProcessor {
@@ -19,9 +18,11 @@ enum PostProcessor {
             // whitespace. readabilityrs protects these serialized spans with a
             // byte scanner; Preformatted is its String.Index-based Swift port.
             result = Preformatted.mapOutside(result) { fragment in
-                fragment
-                    .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
-                    .replacingOccurrences(of: "[ ]{2,}", with: " ", options: .regularExpression)
+                SwiftRegex.replacing(
+                    in: SwiftRegex.replacing(in: fragment, pattern: "\\n{3,}", with: "\n\n"),
+                    pattern: "[ ]{2,}",
+                    with: " "
+                )
             }
         }
         return result
@@ -55,7 +56,7 @@ enum PostProcessor {
             #"(?i)\s+valign\s*=\s*["'][^"']*["']"#,
         ]
         return patterns.reduce(html) { result, pattern in
-            result.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+            SwiftRegex.replacing(in: result, pattern: pattern, with: "")
         }
     }
 
@@ -117,64 +118,51 @@ enum PostProcessor {
         attribute: String,
         containing keyword: String
     ) -> String {
-        let result = NSMutableString(string: html)
+        var result = html
         let openingNeedle = "<\(tag)"
         let closingNeedle = "</\(tag)>"
-        var searchLocation = 0
+        var searchStart = result.startIndex
 
-        while searchLocation < result.length {
-            let searchRange = NSRange(location: searchLocation, length: result.length - searchLocation)
-            let openingRange = result.range(of: openingNeedle, options: .caseInsensitive, range: searchRange)
-            guard openingRange.location != NSNotFound else { break }
-            let boundaryLocation = NSMaxRange(openingRange)
-            guard boundaryLocation == result.length || !isRegexWordCodeUnit(result.character(at: boundaryLocation)) else {
-                searchLocation = boundaryLocation
+        while searchStart < result.endIndex {
+            guard let openingRange = result.firstRange(
+                of: openingNeedle,
+                caseInsensitive: true,
+                in: searchStart..<result.endIndex
+            ) else { break }
+            let boundary = openingRange.upperBound
+            guard boundary == result.endIndex || !isRegexWordCharacter(result[boundary]) else {
+                searchStart = boundary
                 continue
             }
-            let openingEnd = result.range(
-                of: ">",
-                range: NSRange(location: boundaryLocation, length: result.length - boundaryLocation)
-            )
-            guard openingEnd.location != NSNotFound else { break }
-            let openingTagRange = NSRange(
-                location: openingRange.location,
-                length: NSMaxRange(openingEnd) - openingRange.location
-            )
-            let openingTag = result.substring(with: openingTagRange).lowercased()
+            guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex) else { break }
+            let openingTag = result[openingRange.lowerBound..<openingEnd.upperBound].lowercased()
             let attributePrefix = "\(attribute.lowercased())=\""
-            guard let attributeRange = openingTag.range(of: attributePrefix) else {
-                searchLocation = boundaryLocation
+            guard let attributeRange = openingTag.firstRange(of: attributePrefix) else {
+                searchStart = boundary
                 continue
             }
             let valueStart = attributeRange.upperBound
             guard let valueEnd = openingTag[valueStart...].firstIndex(of: "\"") else {
-                searchLocation = boundaryLocation
+                searchStart = boundary
                 continue
             }
             guard openingTag[valueStart..<valueEnd].contains(keyword.lowercased()) else {
-                searchLocation = boundaryLocation
+                searchStart = boundary
                 continue
             }
-            let contentLocation = NSMaxRange(openingEnd)
-            let closingRange = result.range(
+            guard let closingRange = result.firstRange(
                 of: closingNeedle,
-                options: .caseInsensitive,
-                range: NSRange(location: contentLocation, length: result.length - contentLocation)
-            )
-            guard closingRange.location != NSNotFound else { break }
-            result.deleteCharacters(
-                in: NSRange(
-                    location: openingRange.location,
-                    length: NSMaxRange(closingRange) - openingRange.location
-                )
-            )
-            searchLocation = openingRange.location
+                caseInsensitive: true,
+                in: openingEnd.upperBound..<result.endIndex
+            ) else { break }
+            result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
+            searchStart = result.startIndex
         }
-        return String(result)
+        return result
     }
 
-    private static func isRegexWordCodeUnit(_ codeUnit: unichar) -> Bool {
-        codeUnit == 95 || UnicodeScalar(codeUnit).map(CharacterSet.alphanumerics.contains) == true
+    private static func isRegexWordCharacter(_ character: Character) -> Bool {
+        character == "_" || character.isLetter || character.isNumber
     }
 
     private static func removingElements(
@@ -182,52 +170,38 @@ enum PostProcessor {
         tag: String,
         removesOpeningTagWithoutClosingTag: Bool
     ) -> String {
-        let result = NSMutableString(string: html)
+        var result = html
         let openingNeedle = "<\(tag)"
         let closingNeedle = "</\(tag)>"
-        var searchLocation = 0
+        var searchStart = result.startIndex
 
-        while searchLocation < result.length {
-            let searchRange = NSRange(location: searchLocation, length: result.length - searchLocation)
-            let openingRange = result.range(of: openingNeedle, options: .caseInsensitive, range: searchRange)
-            guard openingRange.location != NSNotFound else { break }
-            let boundaryLocation = NSMaxRange(openingRange)
-            guard boundaryLocation == result.length || !isRegexWordCodeUnit(result.character(at: boundaryLocation)) else {
-                searchLocation = boundaryLocation
+        while searchStart < result.endIndex {
+            guard let openingRange = result.firstRange(
+                of: openingNeedle,
+                caseInsensitive: true,
+                in: searchStart..<result.endIndex
+            ) else { break }
+            let boundary = openingRange.upperBound
+            guard boundary == result.endIndex || !isRegexWordCharacter(result[boundary]) else {
+                searchStart = boundary
                 continue
             }
-            let openingEnd = result.range(
-                of: ">",
-                range: NSRange(location: boundaryLocation, length: result.length - boundaryLocation)
-            )
-            guard openingEnd.location != NSNotFound else { break }
-            let contentLocation = NSMaxRange(openingEnd)
-            let closingRange = result.range(
+            guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex) else { break }
+            if let closingRange = result.firstRange(
                 of: closingNeedle,
-                options: .caseInsensitive,
-                range: NSRange(location: contentLocation, length: result.length - contentLocation)
-            )
-            if closingRange.location != NSNotFound {
-                result.deleteCharacters(
-                    in: NSRange(
-                        location: openingRange.location,
-                        length: NSMaxRange(closingRange) - openingRange.location
-                    )
-                )
-                searchLocation = openingRange.location
+                caseInsensitive: true,
+                in: openingEnd.upperBound..<result.endIndex
+            ) {
+                result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
+                searchStart = result.startIndex
             } else if removesOpeningTagWithoutClosingTag {
-                result.deleteCharacters(
-                    in: NSRange(
-                        location: openingRange.location,
-                        length: NSMaxRange(openingEnd) - openingRange.location
-                    )
-                )
-                searchLocation = openingRange.location
+                result.removeSubrange(openingRange.lowerBound..<openingEnd.upperBound)
+                searchStart = result.startIndex
             } else {
-                searchLocation = contentLocation
+                searchStart = openingEnd.upperBound
             }
         }
-        return String(result)
+        return result
     }
 
     private static func removingEmptyParagraphs(from html: String) -> String {
@@ -237,72 +211,58 @@ enum PostProcessor {
             if cleaned == result { break }
             result = cleaned
         }
-        return result.replacingOccurrences(
-            of: #"(?i)(</(?:p|div|h[1-6])>)\s*(?:<br\s*/?>[\s\n]*)+\s*(<(?:p|div|h[1-6]))"#,
+        return SwiftRegex.replacing(
+            in: result,
+            pattern: #"(</(?:p|div|h[1-6])>)\s*(?:<br\s*/?>[\s\n]*)+\s*(<(?:p|div|h[1-6]))"#,
             with: "$1\n$2",
-            options: .regularExpression
+            caseInsensitive: true
         )
     }
 
     private static func removingEmptyParagraphPass(from html: String) -> String {
-        let result = NSMutableString(string: html)
-        var searchLocation = 0
-        while searchLocation < result.length {
-            let openingRange = result.range(
+        var result = html
+        var searchStart = result.startIndex
+        while searchStart < result.endIndex {
+            guard let openingRange = result.firstRange(
                 of: "<p",
-                options: .caseInsensitive,
-                range: NSRange(location: searchLocation, length: result.length - searchLocation)
-            )
-            guard openingRange.location != NSNotFound else { break }
-            let boundaryLocation = NSMaxRange(openingRange)
-            guard boundaryLocation == result.length || !isRegexWordCodeUnit(result.character(at: boundaryLocation)) else {
-                searchLocation = boundaryLocation
+                caseInsensitive: true,
+                in: searchStart..<result.endIndex
+            ) else { break }
+            let boundary = openingRange.upperBound
+            guard boundary == result.endIndex || !isRegexWordCharacter(result[boundary]) else {
+                searchStart = boundary
                 continue
             }
-            let openingEnd = result.range(
-                of: ">",
-                range: NSRange(location: boundaryLocation, length: result.length - boundaryLocation)
-            )
-            guard openingEnd.location != NSNotFound else { break }
-            let contentLocation = NSMaxRange(openingEnd)
-            let closingRange = result.range(
-                of: "</p>",
-                options: .caseInsensitive,
-                range: NSRange(location: contentLocation, length: result.length - contentLocation)
-            )
-            guard closingRange.location != NSNotFound else { break }
-            let content = result.substring(
-                with: NSRange(location: contentLocation, length: closingRange.location - contentLocation)
-            )
+            guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex),
+                  let closingRange = result.firstRange(
+                    of: "</p>",
+                    caseInsensitive: true,
+                    in: openingEnd.upperBound..<result.endIndex
+                  ) else { break }
+            let content = String(result[openingEnd.upperBound..<closingRange.lowerBound])
             if paragraphContentIsEmpty(content) {
-                result.deleteCharacters(
-                    in: NSRange(
-                        location: openingRange.location,
-                        length: NSMaxRange(closingRange) - openingRange.location
-                    )
-                )
-                searchLocation = openingRange.location
+                result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
+                searchStart = result.startIndex
             } else {
-                searchLocation = NSMaxRange(closingRange)
+                searchStart = closingRange.upperBound
             }
         }
-        return String(result)
+        return result
     }
 
     private static func paragraphContentIsEmpty(_ content: String) -> Bool {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = content.trimmed()
         if trimmed.isEmpty || removingBreakTags(from: trimmed).isEmpty { return true }
-        guard trimmed.range(of: "<span", options: [.anchored, .caseInsensitive]) != nil,
+        guard trimmed.firstRange(of: "<span", caseInsensitive: true)?.lowerBound == trimmed.startIndex,
               let openingEnd = trimmed.firstIndex(of: ">"),
-              let closingRange = trimmed.range(of: "</span>", options: [.backwards, .caseInsensitive]),
+              let closingRange = trimmed.lastRange(of: "</span>", caseInsensitive: true),
               closingRange.upperBound == trimmed.endIndex else { return false }
         let spanContent = String(trimmed[trimmed.index(after: openingEnd)..<closingRange.lowerBound])
         return removingBreakTags(from: spanContent).isEmpty
     }
 
     private static func removingBreakTags(from content: String) -> String {
-        content
-            .replacingOccurrences(of: #"(?i)<br\s*/?>"#, with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        SwiftRegex.replacing(in: content, pattern: #"<br\s*/?>"#, with: "", caseInsensitive: true)
+            .trimmed()
     }
 }

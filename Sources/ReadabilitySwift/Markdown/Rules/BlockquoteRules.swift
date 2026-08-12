@@ -3,13 +3,15 @@ enum MarkdownBlockquoteRules {
         let prefix = String(repeating: "> ", count: max(depth, 1))
         var lines: [String] = []
         if let callout, !callout.isEmpty { lines.append("\(prefix)[!\(callout.uppercased())]") }
-        let content = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = inner.trimmed()
         if content.isEmpty { return "\n\n>\n\n" }
-        let normalized = content
-            .replacingOccurrences(of: "\\n[ \\t]*\\n", with: "\n\n", options: .regularExpression)
-            .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+        let normalized = SwiftRegex.replacing(
+            in: SwiftRegex.replacing(in: content, pattern: "\\n[ \\t]*\\n", with: "\n\n"),
+            pattern: "\\n{3,}",
+            with: "\n\n"
+        )
         lines.append(contentsOf: normalized.split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            line.trimmingCharacters(in: .whitespaces).isEmpty ? prefix.trimmingCharacters(in: .whitespaces) : prefix + line
+            line.trimmed().isEmpty ? prefix.trimmed() : prefix + line
         })
         var collapsed: [String] = []
         for line in lines {
@@ -21,7 +23,7 @@ enum MarkdownBlockquoteRules {
     }
 
     private static func isEmptyQuote(_ line: String) -> Bool {
-        let value = line.trimmingCharacters(in: .whitespaces)
+        let value = line.trimmed()
         return !value.isEmpty && value.allSatisfy { $0 == ">" }
     }
 }

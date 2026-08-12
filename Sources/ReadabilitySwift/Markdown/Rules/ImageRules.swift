@@ -9,7 +9,7 @@ enum MarkdownImageRules {
 
     static func figure(alt: String, source: String, caption: String?, options: MarkdownOptions) -> String {
         guard !source.isEmpty, !(options.sanitizeURLs && Utils.isDangerousURL(source)) else { return "" }
-        let value = caption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? caption! : alt
+        let value = caption?.trimmed().isEmpty == false ? caption! : alt
         return "\n\n![\(MarkdownTextRules.escapeLinkText(value))](\(MarkdownTextRules.escapeURLDestination(source)))\n\n"
     }
 }

@@ -81,7 +81,7 @@ enum Preformatted {
         }
 
         guard let nameEnd = html.index(nameStart, offsetBy: name.count, limitedBy: html.endIndex),
-              html[nameStart..<nameEnd].caseInsensitiveCompare(name) == .orderedSame,
+              html[nameStart..<nameEnd].lowercased() == name.lowercased(),
               nameEnd < html.endIndex else { return false }
         return [" ", "\t", "\n", "\r", "\u{000C}", ">"].contains(html[nameEnd])
     }

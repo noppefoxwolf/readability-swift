@@ -54,6 +54,6 @@ enum Scoring {
     }
 
     private static func matches(_ value: String, _ pattern: String) -> Bool {
-        pattern.split(separator: "|").contains { value.range(of: String($0), options: [.caseInsensitive, .regularExpression]) != nil }
+        SwiftRegex.containsLiteralAlternative(value, pattern: pattern, caseInsensitive: true)
     }
 }

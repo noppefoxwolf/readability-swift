@@ -185,6 +185,7 @@ import Testing
         nbTopCandidates: 3,
         charThreshold: 10,
         keepClasses: true,
+        allowedVideoRegex: /youtube/,
         outputMarkdown: true
     )
     let parser = try Readability("<article><p>Portable content that is long enough to be extracted.</p></article>", options: options)

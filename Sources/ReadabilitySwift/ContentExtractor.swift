@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSoup
 
 enum ContentExtractor {
@@ -287,7 +286,7 @@ enum ContentExtractor {
             let keepBlock = shouldKeepBlockElement(sibling, bestScore: bestScore)
             if isBest || siblingScore + (sameClass ? bestScore * 0.2 : 0) >= threshold || goodParagraph || keepBlock {
                 let html = serializeElement(sibling, sanitizeContent: sanitizeContent)
-                if !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !html.trimmed().isEmpty {
                     output.append(Cleaner.replaceBRS(html))
                 }
             }
@@ -305,7 +304,7 @@ enum ContentExtractor {
         }
         let density = DOMUtils.linkDensity(element)
         if text.utf8.count > 80 && density < 0.25 { return true }
-        return text.utf8.count <= 80 && density == 0 && text.range(of: "[.!?](\\s|$)", options: .regularExpression) != nil
+        return text.utf8.count <= 80 && density == 0 && SwiftRegex.contains(text, pattern: "[.!?](\\s|$)")
     }
 
     private static func shouldKeepBlockElement(_ element: Element, bestScore: Double) -> Bool {
@@ -387,6 +386,6 @@ enum ContentExtractor {
     }
 
     private static func matches(_ value: String, _ pattern: String) -> Bool {
-        pattern.split(separator: "|").contains { value.range(of: String($0), options: [.caseInsensitive, .regularExpression]) != nil }
+        SwiftRegex.containsLiteralAlternative(value, pattern: pattern, caseInsensitive: true)
     }
 }

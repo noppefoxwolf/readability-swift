@@ -3,7 +3,7 @@ enum MarkdownMediaRules {
         guard !source.isEmpty, !(options.sanitizeURLs && Utils.isDangerousURL(source)) else { return "" }
         let lower = source.lowercased()
         let label = lower.contains("youtube.com") || lower.contains("youtu.be") ? "Video" :
-            (lower.contains("twitter.com") || lower.range(of: "x.com/[^/]+/status", options: .regularExpression) != nil ? "Tweet" : "Embed")
+            (lower.contains("twitter.com") || SwiftRegex.contains(lower, pattern: "x.com/[^/]+/status") ? "Tweet" : "Embed")
         return "[\(label)](\(source))"
     }
 

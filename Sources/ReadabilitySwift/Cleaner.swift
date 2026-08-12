@@ -1,21 +1,18 @@
-import Foundation
 import SwiftSoup
 
 enum Cleaner {
     static func prepDocument(_ html: String) -> String {
         var result = html
-        result = result.replacingOccurrences(of: "(?is)<form\\b[^>]*>.*?</form>", with: "", options: .regularExpression)
-        result = result.replacingOccurrences(of: "<font\\b", with: "<span", options: .regularExpression)
-        result = result.replacingOccurrences(of: "</font>", with: "</span>", options: .regularExpression)
-        if let regex = try? NSRegularExpression(pattern: "(?is)<noscript\\b[^>]*>(.*?)</noscript>") {
-            let range = NSRange(result.startIndex..<result.endIndex, in: result)
-            for match in regex.matches(in: result, range: range).reversed() {
-                guard let whole = Range(match.range, in: result), let inner = Range(match.range(at: 1), in: result) else { continue }
-                let content = String(result[inner])
-                if content.range(of: "<img\\b", options: [.regularExpression]) != nil {
-                    result.replaceSubrange(whole, with: content)
-                }
-            }
+        result = SwiftRegex.replacing(in: result, pattern: "(?is)<form\\b[^>]*>.*?</form>", with: "")
+        result = SwiftRegex.replacing(in: result, pattern: "<font\\b", with: "<span")
+        result = SwiftRegex.replacing(in: result, pattern: "</font>", with: "</span>")
+        result = SwiftRegex.replacingMatches(
+            in: result,
+            pattern: "(?is)<noscript\\b[^>]*>(.*?)</noscript>"
+        ) { captures in
+            guard captures.indices.contains(1), let content = captures[1],
+                  SwiftRegex.contains(String(content), pattern: "<img\\b") else { return nil }
+            return String(content)
         }
         return result
     }
@@ -30,38 +27,41 @@ enum Cleaner {
         }
     }
 
-    static func cleanArticleContentLight(_ html: String, baseURL: URL?) -> ReadabilityResult<String> {
+    static func cleanArticleContentLight(_ html: String) -> ReadabilityResult<String> {
         guard let document = try? DOMUtils.parse(html), let body = document.body() else { return .success(html) }
         removeNavigationSections(from: body)
         return .success((try? body.html()) ?? html)
     }
 
-    static func cleanArticleContent(_ html: String, baseURL: URL?) -> ReadabilityResult<String> {
-        switch cleanArticleContentLight(html, baseURL: baseURL) {
+    static func cleanArticleContent(
+        _ html: String,
+        allowedVideoRegex: Regex<Substring>? = nil
+    ) -> ReadabilityResult<String> {
+        switch cleanArticleContentLight(html) {
         case let .failure(error): return .failure(error)
         case let .success(value):
             guard let document = try? DOMUtils.parse(value), let body = document.body() else { return .success(value) }
-            removeConditionally(from: body)
+            removeConditionally(from: body, allowedVideoRegex: allowedVideoRegex)
             return .success((try? body.html()) ?? value)
         }
     }
 
     static func replaceBRS(_ html: String) -> String {
         let pattern = "(?i)(<br\\s*/?>(\\s|&nbsp;?)*){2,}"
-        guard html.range(of: pattern, options: .regularExpression) != nil else { return html }
+        guard SwiftRegex.contains(html, pattern: pattern) else { return html }
 
         // readabilityrs turns consecutive breaks into paragraph nodes. When
         // the fragment has an outer element, keep that wrapper and replace
         // only its inner content so the returned HTML remains well formed.
         if let openEnd = html.firstIndex(of: ">"),
-           let closeStart = html.range(of: "</", options: .backwards)?.lowerBound,
+           let closeStart = html.lastRange(of: "</")?.lowerBound,
            closeStart > openEnd {
             let opening = String(html[...openEnd])
             let innerStart = html.index(after: openEnd)
             let inner = String(html[innerStart..<closeStart])
             let closing = String(html[closeStart...])
             let parts = splitOnRegex(inner, pattern: pattern)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .map { $0.trimmed() }
                 .filter { !$0.isEmpty }
             if parts.count > 1 {
                 return opening + parts.map { "<p>\($0)</p>" }.joined(separator: "\n") + closing
@@ -69,16 +69,14 @@ enum Cleaner {
         }
 
         return splitOnRegex(html, pattern: pattern)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { $0.trimmed() }
             .filter { !$0.isEmpty }
             .map { "<p>\($0)</p>" }
             .joined(separator: "\n")
     }
 
     private static func splitOnRegex(_ value: String, pattern: String) -> [String] {
-        let marker = "\u{001F}"
-        let replaced = value.replacingOccurrences(of: pattern, with: marker, options: .regularExpression)
-        return replaced.components(separatedBy: marker)
+        SwiftRegex.split(value, pattern: pattern)
     }
 
     private static func removeUnwantedElements(from root: Element) {
@@ -111,7 +109,10 @@ enum Cleaner {
         return textLength < 400 || DOMUtils.linkDensity(element) > 0.55
     }
 
-    private static func removeConditionally(from root: Element) {
+    private static func removeConditionally(
+        from root: Element,
+        allowedVideoRegex: Regex<Substring>?
+    ) {
         // readabilityrs stores ego_tree NodeIds for data-table membership.
         // ObjectIdentifier is the SwiftSoup reference-identity equivalent; the
         // set must never be reused after reparsing the HTML into another tree.
@@ -125,7 +126,12 @@ enum Cleaner {
             // later ancestor's text/count metrics in SwiftSoup.
             let removals = elements.filter { element in
                 tag == "form" || tag == "fieldset"
-                    || shouldRemove(element, tag: tag, dataTables: dataTables)
+                    || shouldRemove(
+                        element,
+                        tag: tag,
+                        dataTables: dataTables,
+                        allowedVideoRegex: allowedVideoRegex
+                    )
             }
             for element in removals {
                 try? element.remove()
@@ -133,12 +139,17 @@ enum Cleaner {
         }
     }
 
-    private static func shouldRemove(_ element: Element, tag: String, dataTables: Set<ObjectIdentifier>) -> Bool {
+    private static func shouldRemove(
+        _ element: Element,
+        tag: String,
+        dataTables: Set<ObjectIdentifier>,
+        allowedVideoRegex: Regex<Substring>?
+    ) -> Bool {
         let classID = DOMUtils.classAndID(element).lowercased()
         if ["comment", "disqus", "remark", "replies", "respond"].contains(where: classID.contains) { return true }
 
         let text = DOMUtils.getInnerText(element, normalizeSpaces: false)
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedText = text.trimmed()
         // readabilityrs's cleaner measures Rust String byte lengths and counts
         // every link at full weight here. This intentionally differs from the
         // extraction scorer, which discounts hash-only navigation links.
@@ -163,7 +174,7 @@ enum Cleaner {
         let inputCount = (try? element.select("input").count) ?? 0
         let headingDensity = textDensity(element, selector: "h1,h2,h3,h4,h5,h6")
         let embeds = (try? element.select("object,embed,iframe")) ?? SwiftSoup.Elements()
-        if embeds.contains(where: nodeHasAllowedVideo) { return false }
+        if embeds.contains(where: { nodeHasAllowedVideo($0, allowedVideoRegex: allowedVideoRegex) }) { return false }
         if matchesWholeText(text, pattern: Constants.regexps.adWords) || matchesWholeText(text, pattern: Constants.regexps.loadingWords) { return true }
         let textDensityValue = textDensity(element, selector: "span,li,td,blockquote,dl,div,img,ol,p,pre,table,ul")
         let isFigureChild = DOMUtils.ancestors(element, limit: 0).contains { $0.tagName().lowercased() == "figure" }
@@ -216,10 +227,10 @@ enum Cleaner {
 
     private static func serializedCleanerText(_ element: Element) -> String {
         guard let html = try? element.html() else { return DOMUtils.getInnerText(element, normalizeSpaces: false) }
-        let withoutMarkup = html.replacingOccurrences(
-            of: "(?s)<!--.*?-->|<[^>]*>",
-            with: "",
-            options: .regularExpression
+        let withoutMarkup = SwiftRegex.replacing(
+            in: html,
+            pattern: "(?s)<!--.*?-->|<[^>]*>",
+            with: ""
         )
         return Utils.unescapeHTMLEntities(withoutMarkup)
     }
@@ -228,8 +239,8 @@ enum Cleaner {
         var weight = 0
         for attribute in ["class", "id"] {
             let value = ((try? element.attr(attribute)) ?? "")
-            if matches(value, Constants.regexps.negative) { weight -= 25 }
-            if matches(value, Constants.regexps.positive) { weight += 25 }
+            if SwiftRegex.containsLiteralAlternative(value, pattern: Constants.regexps.negative, caseInsensitive: true) { weight -= 25 }
+            if SwiftRegex.containsLiteralAlternative(value, pattern: Constants.regexps.positive, caseInsensitive: true) { weight += 25 }
         }
         return weight
     }
@@ -242,19 +253,29 @@ enum Cleaner {
         return Double(childText) / Double(total)
     }
 
-    private static func nodeHasAllowedVideo(_ element: Element) -> Bool {
+    private static func nodeHasAllowedVideo(
+        _ element: Element,
+        allowedVideoRegex: Regex<Substring>?
+    ) -> Bool {
         if let attributes = element.getAttributes() {
-            if attributes.asList().contains(where: { matches($0.getValue(), Constants.regexps.videos) }) { return true }
+            if attributes.asList().contains(where: { attribute in
+                let value = attribute.getValue()
+                return matches(value, Constants.regexps.videos)
+                    || allowedVideoRegex.map { regex in value.firstMatch(of: regex) != nil } == true
+            }) { return true }
         }
-        return element.tagName().lowercased() == "object" && matches(DOMUtils.textContent(element), Constants.regexps.videos)
+        guard element.tagName().lowercased() == "object" else { return false }
+        let content = DOMUtils.textContent(element)
+        return matches(content, Constants.regexps.videos)
+            || allowedVideoRegex.map { content.firstMatch(of: $0) != nil } == true
     }
 
     private static func matchesWholeText(_ value: String, pattern: String) -> Bool {
-        value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        SwiftRegex.contains(value, pattern: pattern, caseInsensitive: true)
     }
 
     private static func matches(_ value: String, _ pattern: String) -> Bool {
-        value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        SwiftRegex.contains(value, pattern: pattern, caseInsensitive: true)
     }
 
     private static func isDataTable(_ element: Element) -> Bool {

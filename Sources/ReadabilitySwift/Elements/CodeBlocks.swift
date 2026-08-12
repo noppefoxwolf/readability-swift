@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSoup
 
 enum ElementCodeBlocks {
@@ -71,8 +70,8 @@ enum ElementCodeBlocks {
                 return ElementLanguages.normalizeLanguage(String(value.dropFirst(prefix.count)))
             }
         }
-        if let match = classes.range(of: "(?i)brush:\\s*(\\w+)", options: .regularExpression) {
-            let value = String(classes[match]).replacingOccurrences(of: "brush:", with: "", options: .caseInsensitive).trimmingCharacters(in: .whitespaces)
+        if let match = SwiftRegex.firstRange(in: classes, pattern: "brush:\\s*(\\w+)", caseInsensitive: true) {
+            let value = String(classes[match]).replacingLiteral("brush:", with: "", caseInsensitive: true).trimmed()
             if !value.isEmpty { return ElementLanguages.normalizeLanguage(value) }
         }
         for token in classes.split(whereSeparator: { $0.isWhitespace }) where ElementLanguages.isKnownLanguage(String(token)) {
@@ -89,20 +88,20 @@ enum ElementCodeBlocks {
     }
 
     private static func cleanCode(_ value: String) -> String {
-        var result = value.replacingOccurrences(of: "\t", with: "    ").replacingOccurrences(of: "\u{00a0}", with: " ")
-        let lines = result.components(separatedBy: .newlines)
-        let numbered = lines.count > 2 && lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.prefix(5).allSatisfy {
-            $0.range(of: "^\\s*\\d+[\\s|]", options: .regularExpression) != nil
+        var result = value.replacing("\t", with: "    ").replacing("\u{00a0}", with: " ")
+        let lines = result.lines().map(String.init)
+        let numbered = lines.count > 2 && lines.filter { !$0.trimmed().isEmpty }.prefix(5).allSatisfy {
+            SwiftRegex.contains($0, pattern: "^\\s*\\d+[\\s|]")
         }
         if numbered {
-            result = lines.map { $0.replacingOccurrences(of: "^\\s*\\d+[\\s|]", with: "", options: .regularExpression) }.joined(separator: "\n")
+            result = lines.map { SwiftRegex.replacing(in: $0, pattern: "^\\s*\\d+[\\s|]", with: "") }.joined(separator: "\n")
         }
-        result = result.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        result = SwiftRegex.replacing(in: result, pattern: "\n{3,}", with: "\n\n")
+        return result.trimmed()
     }
 
     private static func canonical(language: String, code: String) -> String {
-        let escaped = code.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        let escaped = code.replacing("&", with: "&amp;").replacing("<", with: "&lt;").replacing(">", with: "&gt;")
         guard !language.isEmpty else { return "<pre><code>\(escaped)</code></pre>" }
         return "<pre><code class=\"language-\(language)\" data-lang=\"\(language)\">\(escaped)</code></pre>"
     }

@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSoup
 
 enum ElementFootnotes {
@@ -50,9 +49,9 @@ enum ElementFootnotes {
         for (index, original) in references.enumerated() {
             let number = index + 1
             let canonical = "<sup id=\"fnref:\(number)\"><a href=\"#fn:\(number)\">\(number)</a></sup>"
-            result = result.replacingOccurrences(of: original, with: canonical)
+            result = result.replacing(original, with: canonical)
         }
-        for definition in definitions { result = result.replacingOccurrences(of: definition.container, with: "") }
+        for definition in definitions { result = result.replacing(definition.container, with: "") }
         if !definitions.isEmpty {
             let items = definitions.enumerated().map { index, definition in
                 "<li class=\"footnote\" id=\"fn:\(index + 1)\"><p>\(definition.content)</p><a href=\"#fnref:\(index + 1)\" class=\"footnote-backref\">↩</a></li>"
@@ -75,6 +74,6 @@ enum ElementFootnotes {
                 content += text.getWholeText()
             }
         }
-        return DOMUtils.normalizeWhitespace(content).trimmingCharacters(in: .whitespacesAndNewlines)
+        return DOMUtils.normalizeWhitespace(content).trimmed()
     }
 }
