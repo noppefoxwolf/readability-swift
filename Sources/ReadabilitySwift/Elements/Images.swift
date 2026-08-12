@@ -61,14 +61,14 @@ enum ElementImages {
     }
 
     private static func attribute(_ name: String, in tag: String) -> String? {
-        let pattern = "(?i)\\b\(name)=([\"'])(.*?)\\1"
+        let pattern = "(?i)(?:^|\\s)\(name)=([\"'])(.*?)\\1"
         guard let regex = try? NSRegularExpression(pattern: pattern), let match = regex.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)), let range = Range(match.range(at: 2), in: tag) else { return nil }
         return String(tag[range])
     }
 
     private static func replaceAttribute(_ name: String, old: String, new: String, in tag: String) -> String {
         guard !old.isEmpty else { return tag }
-        let pattern = "(?i)(\\b\(name)=)([\"'])" + NSRegularExpression.escapedPattern(for: old) + "([\"'])"
+        let pattern = "(?i)(\\s\(name)=)([\"'])" + NSRegularExpression.escapedPattern(for: old) + "([\"'])"
         return tag.replacingOccurrences(of: pattern, with: "$1$2\(escape(new))$3", options: .regularExpression)
     }
 

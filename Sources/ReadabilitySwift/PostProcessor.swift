@@ -38,9 +38,11 @@ enum PostProcessor {
         if cleanWhitespace { removeEmptyParagraphs(from: body) }
         var result = (try? body.html()) ?? html
         if cleanWhitespace {
-            result = result
-                .replacingOccurrences(of: "\\n\\s*\\n\\s*\\n", with: "\\n\\n", options: .regularExpression)
-                .replacingOccurrences(of: "[ ]{2,}", with: " ", options: .regularExpression)
+            result = Preformatted.mapOutside(result) { fragment in
+                fragment
+                    .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+                    .replacingOccurrences(of: "[ ]{2,}", with: " ", options: .regularExpression)
+            }
         }
         return result
     }

@@ -194,7 +194,10 @@ cat article.html | swift run Example --format markdown
 
 The input can be a local HTML file, an `http`/`https` URL, `-`, or omitted to read from standard input. Output formats are `text` (default) and `markdown`. Use `--url` when a local HTML file needs a base URL for resolving relative links and media.
 
-To run the optional Mozilla fixture compatibility test, set `READABILITYRS_FIXTURES` to a directory containing fixture subdirectories with `source.html` and `expected-metadata.json` files. Set `READABILITYRS_CASES` to a comma-separated list to run selected fixtures.
+The complete 130-page fixture corpus is bundled with the test target, so
+`swift test` always runs compatibility checks without additional environment
+variables. Current compatibility rates and known per-case differences are
+recorded in [`COMPATIBILITY.md`](COMPATIBILITY.md).
 
 ## Acknowledgements
 

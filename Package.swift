@@ -27,7 +27,10 @@ let package = Package(
         ),
         .testTarget(
             name: "ReadabilitySwiftTests",
-            dependencies: ["ReadabilitySwift"]
+            dependencies: ["ReadabilitySwift"],
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -1,0 +1,105 @@
+{"html":"<audio><source src=\"song.mp3\" type=\"audio/mpeg\"/></audio>","markdown":"[Audio](song.mp3)"}
+{"html":"<math data-latex=\"E = mc^2\" display=\"block\"></math>","markdown":"$$E = mc^2$$"}
+{"html":"<blockquote><p>A wise quote.</p></blockquote>","markdown":"> A wise quote."}
+{"html":"<blockquote data-callout=\"warning\"><p>Be careful!</p></blockquote>","markdown":"> [!WARNING]\n> Be careful!"}
+{"html":"<blockquote><pre><code class=\"language-rust\">fn main() {}</code></pre></blockquote>","markdown":"> ```rust\n> fn main() {}\n> ```"}
+{"html":"<blockquote><h2>Title</h2><p>text</p></blockquote>","markdown":"> ## Title\n>\n> text"}
+{"html":"<blockquote><p>first</p><p>second</p></blockquote>","markdown":"> first\n>\n> second"}
+{"html":"<blockquote><p>quoted text</p></blockquote>","markdown":"> quoted text"}
+{"html":"<p><strong>bold text</strong></p>","markdown":"**bold text**"}
+{"html":"<p><em><strong>bold italic</strong></em></p>","markdown":"***bold italic***"}
+{"html":"<a href=\"https://example.com\"><strong>bold link</strong></a>","markdown":"[**bold link**](https://example.com)"}
+{"html":"<ul><li><strong>bold item</strong></li></ul>","markdown":"- **bold item**"}
+{"html":"<p>array[0] = value</p>","markdown":"array[0] = value"}
+{"html":"<pre class=\"brush: ruby\"><code>puts \"hi\"</code></pre>","markdown":"```ruby\nputs \"hi\"\n```"}
+{"html":"<pre><code></code></pre>","markdown":"```\n\n```"}
+{"html":"<pre><code>line1\r\nline2\nline3</code></pre>","markdown":"```\nline1\nline2\nline3\n```"}
+{"html":"<pre><code>show ```backticks``` here</code></pre>","markdown":"~~~~\nshow ```backticks``` here\n~~~~"}
+{"html":"<h2>Using <code>println!</code></h2>","markdown":"## Using `println!`"}
+{"html":"<p>A</p><p></p><p></p><p>B</p>","markdown":"A\n\nB"}
+{"html":"<p>line1\r\nline2</p>","markdown":"line1 line2"}
+{"html":"<p><strong><em><del>deep</del></em></strong></p>","markdown":"***~~deep~~***"}
+{"html":"<p><a href=\"https://example.com\">link</a></p>","markdown":"[link](https://example.com)"}
+{"html":"<dl><dt>Term</dt><dd>Definition of the term.</dd></dl>","markdown":"**Term**\n: Definition of the term."}
+{"html":"<details><summary>Click</summary><p>Hidden</p></details>","markdown":"<details><summary>Click</summary><p>Hidden</p></details>"}
+{"html":"<blockquote></blockquote>","markdown":">"}
+{"html":"<p><strong></strong></p>","markdown":""}
+{"html":"<pre><code></code></pre>","markdown":"```\n\n```"}
+{"html":"<h2></h2>","markdown":""}
+{"html":"<a href=\"https://example.com\"></a>","markdown":"[https://example.com](https://example.com)"}
+{"html":"<ul></ul>","markdown":""}
+{"html":"<p></p>","markdown":""}
+{"html":"<table></table>","markdown":""}
+{"html":"<p>Rating: *** three stars</p>","markdown":"Rating: \\*\\*\\* three stars"}
+{"html":"<p>C:\\Users\\file</p>","markdown":"C:\\\\Users\\\\file"}
+{"html":"<p>use the `grave` accent</p>","markdown":"use the \\`grave\\` accent"}
+{"html":"<p>approximately ~100</p>","markdown":"approximately \\~100"}
+{"html":"<p>file_name_here</p>","markdown":"file\\_name\\_here"}
+{"html":"<pre><code>some code here</code></pre>","markdown":"```\nsome code here\n```"}
+{"html":"<pre><code class=\"language-rust\">fn main() {\n    println!(\"Hello\");\n}</code></pre>","markdown":"```rust\nfn main() {\n    println!(\"Hello\");\n}\n```"}
+{"html":"<figure><img alt=\"A nice photo\" src=\"img.jpg\"/><figcaption></figcaption></figure>","markdown":"![A nice photo](img.jpg)"}
+{"html":"<figure><img src=\"photo.jpg\" alt=\"alt text\"/><figcaption>My caption</figcaption></figure>","markdown":"![My caption](photo.jpg)"}
+{"html":"<p>Text<sup id=\"fnref1\"><a href=\"#fn:1\" class=\"footnote\">1</a></sup></p>\n        <div id=\"footnotes\"><ol><li class=\"footnote\" id=\"fn:1\">see [x](javascript:alert(1))</li></ol></div>","markdown":"Text[^1]\n\n---\n\n[^1]: see \\[x\\](javascript:alert(1))"}
+{"html":"<p>Text<sup id=\"fnref1\"><a href=\"#fn:1\" class=\"footnote\">1</a></sup></p>\n        <div id=\"footnotes\"><ol><li class=\"footnote\" id=\"fn:1\">Footnote content.</li></ol></div>","markdown":"Text[^1]\n\n---\n\n[^1]: Footnote content."}
+{"html":"<h2>Section</h2><h3>Subsection</h3>","markdown":"## Section\n\n### Subsection"}
+{"html":"<p><mark>highlighted</mark></p>","markdown":"==highlighted=="}
+{"html":"<p>Above</p><hr/><p>Below</p>","markdown":"Above\n\n---\n\nBelow"}
+{"html":"<img src=\"photo.jpg\" alt=\"A nice photo\"/>","markdown":"![A nice photo](photo.jpg)"}
+{"html":"<p><img src=\"a.jpg\" alt=\"](javascript:evil()) [x\"></p>","markdown":"![\\](javascript:evil()) \\[x](a.jpg)"}
+{"html":"<img src=\"photo.jpg\" alt=\"\"/>","markdown":"![](photo.jpg)"}
+{"html":"<p><img src=\"photo.jpg\" alt=\"\"/></p>","markdown":"![](photo.jpg)"}
+{"html":"<a href=\"https://example.com\"><img src=\"icon.png\" alt=\"icon\"/></a>","markdown":"[![icon](icon.png)](https://example.com)"}
+{"html":"<img src=\"photo.jpg\"/>","markdown":"![](photo.jpg)"}
+{"html":"<img alt=\"test\"/>","markdown":""}
+{"html":"<img src=\"photo.jpg\" alt=\"a photo [nice]\"/>","markdown":"![a photo \\[nice\\]](photo.jpg)"}
+{"html":"<img src=\"photo.jpg\" alt=\"A photo\" title=\"My Photo\"/>","markdown":"![A photo](photo.jpg \"My Photo\")"}
+{"html":"<p>Use <code>println!</code> to print.</p>","markdown":"Use `println!` to print."}
+{"html":"<p>The formula <math data-latex=\"x^2\" display=\"inline\"></math> is simple.</p>","markdown":"The formula $x^2$ is simple."}
+{"html":"<p><em>italic text</em></p>","markdown":"*italic text*"}
+{"html":"<span class=\"katex\" data-latex=\"a^2 + b^2\">rendered</span>","markdown":"$a^2 + b^2$"}
+{"html":"<img data-src=\"real.jpg\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\" alt=\"test\"/>","markdown":"![test](real.jpg)"}
+{"html":"<p><a href=\"https://example.com\">Example</a></p>","markdown":"[Example](https://example.com)"}
+{"html":"<a href=\"#section\">Section</a>","markdown":"[Section](#section)"}
+{"html":"<p><a href=\"http://e.com/a)b\">t</a></p>","markdown":"[t](<http://e.com/a)b>)"}
+{"html":"<h3><a href=\"https://example.com\">Link Heading</a></h3>","markdown":"### [Link Heading](https://example.com)"}
+{"html":"<a>just text</a>","markdown":"just text"}
+{"html":"<a href=\"/page/sub\">relative</a>","markdown":"[relative](/page/sub)"}
+{"html":"<a href=\"https://example.com/path?q=a&amp;b=c\">query</a>","markdown":"[query](https://example.com/path?q=a&b=c)"}
+{"html":"<p><a href=\"u\" title='a\"b'>t</a></p>","markdown":"[t](u \"a\\\"b\")"}
+{"html":"<a href=\"https://example.com\" title=\"Visit Example\">click</a>","markdown":"[click](https://example.com \"Visit Example\")"}
+{"html":"<a href=\"https://example.com\">click</a>","markdown":"[click](https://example.com)"}
+{"html":"<ul><li><p>paragraph item</p></li></ul>","markdown":"- paragraph item"}
+{"html":"<p><strong>bold</strong> and <em>italic</em> and <code>code</code></p>","markdown":"**bold** and *italic* and `code`"}
+{"html":"<ul><li>bullet<ol><li>numbered</li></ol></li></ul>","markdown":"- bullet\n  1. numbered"}
+{"html":"<p>A<sup id=\"fnref1\"><a href=\"#fn:1\" class=\"footnote\">1</a></sup> and\n        B<sup id=\"fnref2\"><a href=\"#fn:2\" class=\"footnote\">2</a></sup></p>\n        <div id=\"footnotes\"><ol>\n            <li class=\"footnote\" id=\"fn:1\">First.</li>\n            <li class=\"footnote\" id=\"fn:2\">Second.</li>\n        </ol></div>","markdown":"A[^1] and B[^2]\n\n---\n\n[^1]: First.\n[^2]: Second."}
+{"html":"<ul><li><p>first</p><p>second</p></li></ul>","markdown":"- first\nsecond"}
+{"html":"<p>hello    world</p>","markdown":"hello world"}
+{"html":"<p>hello world</p>","markdown":"hello world"}
+{"html":"<blockquote><blockquote><p>deep</p></blockquote></blockquote>","markdown":"> > > deep"}
+{"html":"<a href=\"outer\"><a href=\"inner\">text</a></a>","markdown":"[outer](outer)[text](inner)"}
+{"html":"<ul><li>L1<ul><li>L2<ul><li>L3</li></ul></li></ul></li></ul>","markdown":"- L1\n  - L2\n    - L3"}
+{"html":"<ul><li>outer<ul><li>inner</li></ul></li></ul>","markdown":"- outer\n  - inner"}
+{"html":"<pre><code>let x = a * b + c[0];</code></pre>","markdown":"```\nlet x = a * b + c[0];\n```"}
+{"html":"<h2>Title</h2><p>Paragraph with <strong>bold</strong> text.</p><ul><li>item one</li><li>item two</li></ul><blockquote><p>A quote.</p></blockquote>","markdown":"## Title\n\nParagraph with **bold** text.\n\n- item one\n- item two\n\n> A quote."}
+{"html":"<ol><li>First</li><li>Second</li><li>Third</li></ol>","markdown":"1. First\n2. Second\n3. Third"}
+{"html":"<ul><li><p>text</p></li></ul>","markdown":"- text"}
+{"html":"<ol><li><p>item one</p></li><li><p>item two</p></li></ol>","markdown":"1. item one\n2. item two"}
+{"html":"<pre>preformatted text</pre>","markdown":"```\npreformatted text\n```"}
+{"html":"<pre class=\"language-python\"><code class=\"language-python\">print(\"hello\")</code></pre>","markdown":"```python\nprint(\"hello\")\n```"}
+{"html":"<table><thead><tr><th>Name</th><th>Age</th></tr></thead><tbody><tr><td>Alice</td><td>30</td></tr></tbody></table>","markdown":"| Name  | Age |\n|-------|-----|\n| Alice | 30  |"}
+{"html":"<p><del>removed</del></p>","markdown":"~~removed~~"}
+{"html":"<p>H<sub>2</sub>O</p>","markdown":"H~2~O"}
+{"html":"<p>E=mc<sup>2</sup></p>","markdown":"E=mc^2^"}
+{"html":"<table><thead><tr><th>Name</th></tr></thead>\n        <tbody><tr><td><a href=\"https://example.com\">Link</a></td></tr></tbody></table>","markdown":"| Name                        |\n|-----------------------------|\n| [Link](https://example.com) |"}
+{"html":"<table><thead><tr><th>H</th></tr></thead><tbody><tr><td><p>cell text</p></td></tr></tbody></table>","markdown":"| H         |\n|-----------|\n| cell text |"}
+{"html":"<table><tr><td colspan=\"2\">merged</td></tr></table>","markdown":"<table><tbody><tr><td colspan=\"2\">merged</td></tr></tbody></table>"}
+{"html":"<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table>","markdown":"|     |     |\n|-----|-----|\n| a   | b   |\n| c   | d   |"}
+{"html":"<table><thead><tr><th>Name</th></tr></thead><tbody><tr><td>A | B</td></tr></tbody></table>","markdown":"| Name   |\n|--------|\n| A \\| B |"}
+{"html":"<table><thead><tr><th>A</th><th>B</th><th>C</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>","markdown":"| A   | B   | C   |\n|-----|-----|-----|\n| 1   | 2   |     |"}
+{"html":"<ul><li><input type=\"checkbox\" checked/> Done</li><li><input type=\"checkbox\"/> Todo</li></ul>","markdown":"- [x] Done\n- [ ] Todo"}
+{"html":"<p>text   </p><p>more text   </p>","markdown":"text\n\nmore text"}
+{"html":"<ul><li>Apple</li><li>Banana</li><li>Cherry</li></ul>","markdown":"- Apple\n- Banana\n- Cherry"}
+{"html":"<p>Héllo wörld café naïve</p>","markdown":"Héllo wörld café naïve"}
+{"html":"<video src=\"movie.mp4\"></video>","markdown":"[Video](movie.mp4)"}
+{"html":"<video><source src=\"movie.mp4\" type=\"video/mp4\"/></video>","markdown":"[Video](movie.mp4)"}
+{"html":"<iframe src=\"https://www.youtube.com/embed/abc123\"></iframe>","markdown":"[Video](https://www.youtube.com/embed/abc123)"}

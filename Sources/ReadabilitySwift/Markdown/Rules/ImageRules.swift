@@ -1,13 +1,15 @@
 enum MarkdownImageRules {
-    static func image(alt: String, source: String, title: String) -> String {
-        guard !source.isEmpty else { return "" }
-        let escapedTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
-        return title.isEmpty ? "![\(alt)](\(source))" : "![\(alt)](\(source) \"\(escapedTitle)\")"
+    static func image(alt: String, source: String, title: String, options: MarkdownOptions) -> String {
+        guard !source.isEmpty, !(options.sanitizeURLs && Utils.isDangerousURL(source)) else { return "" }
+        let escapedAlt = MarkdownTextRules.escapeLinkText(alt)
+        let escapedSource = MarkdownTextRules.escapeURLDestination(source)
+        let escapedTitle = MarkdownTextRules.escapeTitle(title)
+        return title.isEmpty ? "![\(escapedAlt)](\(escapedSource))" : "![\(escapedAlt)](\(escapedSource) \"\(escapedTitle)\")"
     }
 
-    static func figure(alt: String, source: String, caption: String?) -> String {
-        guard !source.isEmpty else { return "" }
+    static func figure(alt: String, source: String, caption: String?, options: MarkdownOptions) -> String {
+        guard !source.isEmpty, !(options.sanitizeURLs && Utils.isDangerousURL(source)) else { return "" }
         let value = caption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? caption! : alt
-        return "\n\n![\(value)](\(source))\n\n"
+        return "\n\n![\(MarkdownTextRules.escapeLinkText(value))](\(MarkdownTextRules.escapeURLDestination(source)))\n\n"
     }
 }

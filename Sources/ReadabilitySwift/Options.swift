@@ -15,6 +15,7 @@ public struct ReadabilityOptions {
     public var cleanWhitespace: Bool
     public var outputMarkdown: Bool
     public var markdownOptions: MarkdownOptions?
+    public var sanitizeContent: Bool
 
     public init(
         debug: Bool = false,
@@ -30,7 +31,8 @@ public struct ReadabilityOptions {
         cleanStyles: Bool = true,
         cleanWhitespace: Bool = true,
         outputMarkdown: Bool = false,
-        markdownOptions: MarkdownOptions? = nil
+        markdownOptions: MarkdownOptions? = nil,
+        sanitizeContent: Bool = false
     ) {
         self.debug = debug
         self.maxElemsToParse = maxElemsToParse
@@ -46,6 +48,7 @@ public struct ReadabilityOptions {
         self.cleanWhitespace = cleanWhitespace
         self.outputMarkdown = outputMarkdown
         self.markdownOptions = markdownOptions
+        self.sanitizeContent = sanitizeContent
     }
 
 }

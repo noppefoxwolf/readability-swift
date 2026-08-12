@@ -36,7 +36,7 @@ enum ContentExtractor {
         guard let best = findBestCandidate(scores: scores, options: options) else {
             return nil
         }
-        return extractArticleContent(best: best, scores: scores)
+        return extractArticleContent(best: best, scores: scores, sanitizeContent: options.sanitizeContent)
     }
 
     private static func findCandidates(_ document: Document, flags: ParseFlags) -> [Element] {
@@ -219,8 +219,12 @@ enum ContentExtractor {
         }.max(by: { $0.1 < $1.1 })?.0
     }
 
-    private static func extractArticleContent(best: Element, scores: [ObjectIdentifier: (element: Element, score: Double)]) -> String? {
-        guard let parent = best.parent() else { return Cleaner.replaceBRS(serializeElement(best)) }
+    private static func extractArticleContent(
+        best: Element,
+        scores: [ObjectIdentifier: (element: Element, score: Double)],
+        sanitizeContent: Bool
+    ) -> String? {
+        guard let parent = best.parent() else { return Cleaner.replaceBRS(serializeElement(best, sanitizeContent: sanitizeContent)) }
         let bestScore = scores[ObjectIdentifier(best)]?.score ?? 0
         let threshold = max(bestScore * 0.2, 10)
         let bestClass = (try? best.attr("class")) ?? ""
@@ -233,7 +237,7 @@ enum ContentExtractor {
             let goodParagraph = isGoodSiblingParagraph(sibling)
             let keepBlock = shouldKeepBlockElement(sibling, bestScore: bestScore)
             if isBest || siblingScore + (sameClass ? bestScore * 0.2 : 0) >= threshold || goodParagraph || keepBlock {
-                let html = serializeElement(sibling)
+                let html = serializeElement(sibling, sanitizeContent: sanitizeContent)
                 if !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     output.append(Cleaner.replaceBRS(html))
                 }
@@ -281,13 +285,21 @@ enum ContentExtractor {
         return !(navigationKeywords.contains(where: marker.contains) && density > 0.3)
     }
 
-    private static func serializeElement(_ element: Element) -> String {
+    private static func serializeElement(_ element: Element, sanitizeContent: Bool) -> String {
         guard DOMUtils.isProbablyVisible(element) else { return "" }
         let originalTag = element.tagName().lowercased()
+        if sanitizeContent && ["script", "style", "iframe", "object", "embed", "form", "noscript", "template"].contains(originalTag) {
+            return ""
+        }
         let tag = shouldConvertDivToParagraph(element) ? "p" : originalTag
         var html = "<\(tag)"
         if let attributes = element.getAttributes() {
             for attribute in attributes.asList() {
+                if sanitizeContent {
+                    let name = attribute.getKey().lowercased()
+                    if name.hasPrefix("on") { continue }
+                    if ["href", "src", "xlink:href"].contains(name), Utils.isDangerousURL(attribute.getValue()) { continue }
+                }
                 html += " \(attribute.html())"
             }
         }
@@ -296,10 +308,10 @@ enum ContentExtractor {
         html += ">"
         for node in element.getChildNodes() {
             if let child = node as? Element {
-                html += serializeElement(child)
+                html += serializeElement(child, sanitizeContent: sanitizeContent)
             } else if let text = node as? TextNode {
                 html += Entities.escape(text.getWholeText())
-            } else if let comment = node as? Comment {
+            } else if let comment = node as? Comment, !sanitizeContent {
                 html += "<!--\(comment.getData())-->"
             }
         }

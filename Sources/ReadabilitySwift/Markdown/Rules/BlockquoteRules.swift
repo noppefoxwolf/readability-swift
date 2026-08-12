@@ -5,9 +5,23 @@ enum MarkdownBlockquoteRules {
         if let callout, !callout.isEmpty { lines.append("\(prefix)[!\(callout.uppercased())]") }
         let content = inner.trimmingCharacters(in: .whitespacesAndNewlines)
         if content.isEmpty { return "\n\n>\n\n" }
-        lines.append(contentsOf: content.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+        let normalized = content
+            .replacingOccurrences(of: "\\n[ \\t]*\\n", with: "\n\n", options: .regularExpression)
+            .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+        lines.append(contentsOf: normalized.split(separator: "\n", omittingEmptySubsequences: false).map { line in
             line.trimmingCharacters(in: .whitespaces).isEmpty ? prefix.trimmingCharacters(in: .whitespaces) : prefix + line
         })
-        return "\n\n\(lines.joined(separator: "\n"))\n\n"
+        var collapsed: [String] = []
+        for line in lines {
+            let emptyQuote = isEmptyQuote(line)
+            if emptyQuote, collapsed.last.map(isEmptyQuote) == true { continue }
+            collapsed.append(line)
+        }
+        return "\n\n\(collapsed.joined(separator: "\n"))\n\n"
+    }
+
+    private static func isEmptyQuote(_ line: String) -> Bool {
+        let value = line.trimmingCharacters(in: .whitespaces)
+        return !value.isEmpty && value.allSatisfy { $0 == ">" }
     }
 }

@@ -68,7 +68,9 @@ public final class Readability {
         let excerpt = metadata.excerpt
             ?? cleanedExcerpt.flatMap { paragraphPreservingSourceWhitespace($0, in: extracted) } ?? cleanedExcerpt
             ?? excerptFromText(text)
-        let markdown = options.outputMarkdown ? MarkdownConverter.htmlToMarkdown(cleanedHTML, options: options.markdownOptions ?? MarkdownOptions(), title: metadata.title) : nil
+        var markdownOptions = options.markdownOptions ?? MarkdownOptions()
+        markdownOptions.sanitizeURLs = options.sanitizeContent
+        let markdown = options.outputMarkdown ? MarkdownConverter.htmlToMarkdown(cleanedHTML, options: markdownOptions, title: metadata.title) : nil
         return Article(
             title: title,
             content: cleanedHTML,

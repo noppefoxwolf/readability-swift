@@ -13,4 +13,28 @@ enum MarkdownTextRules {
         guard !trimmed.isEmpty else { return "" }
         return trimmed.contains("`") ? "`` \(trimmed) ``" : "`\(trimmed)`"
     }
+
+    static func escapeLinkText(_ value: String) -> String {
+        value.reduce(into: "") { result, character in
+            if "\\[]".contains(character) { result.append("\\") }
+            result.append(character)
+        }
+    }
+
+    static func escapeURLDestination(_ value: String) -> String {
+        let stripped = String(value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+        guard stripped.contains(where: { " ()<>".contains($0) }) else { return stripped }
+        let inner = stripped
+            .replacingOccurrences(of: "<", with: "%3C")
+            .replacingOccurrences(of: ">", with: "%3E")
+        return "<\(inner)>"
+    }
+
+    static func escapeTitle(_ value: String) -> String {
+        value.reduce(into: "") { result, character in
+            if character == "\n" || character == "\r" { return }
+            if character == "\\" || character == "\"" { result.append("\\") }
+            result.append(character)
+        }
+    }
 }

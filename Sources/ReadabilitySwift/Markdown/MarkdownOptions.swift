@@ -16,6 +16,7 @@ public struct MarkdownOptions: Equatable {
     public var strongDelimiter: String
     public var linkStyle: MarkdownLinkStyle
     public var preserveComplexTables: Bool
+    public var sanitizeURLs: Bool
 
     public init(
         headingStyle: MarkdownHeadingStyle = .atx,
@@ -24,7 +25,8 @@ public struct MarkdownOptions: Equatable {
         emphasisDelimiter: Character = "*",
         strongDelimiter: String = "**",
         linkStyle: MarkdownLinkStyle = .inline,
-        preserveComplexTables: Bool = true
+        preserveComplexTables: Bool = true,
+        sanitizeURLs: Bool = false
     ) {
         self.headingStyle = headingStyle
         self.bulletCharacter = bulletCharacter
@@ -33,6 +35,7 @@ public struct MarkdownOptions: Equatable {
         self.strongDelimiter = strongDelimiter
         self.linkStyle = linkStyle
         self.preserveComplexTables = preserveComplexTables
+        self.sanitizeURLs = sanitizeURLs
     }
 
 }

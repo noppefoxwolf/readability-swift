@@ -1,6 +1,22 @@
 import Foundation
 
 enum Utils {
+    static func isDangerousURL(_ value: String) -> Bool {
+        let trimmed = value.drop(while: { $0.isWhitespace || $0.isASCII && $0.asciiValue.map({ $0 < 32 }) == true })
+        guard let colon = trimmed.firstIndex(of: ":") else { return false }
+        let rawScheme = trimmed[..<colon]
+        guard !rawScheme.contains(where: { "/?#".contains($0) }) else { return false }
+        let scheme = rawScheme.filter { !$0.isWhitespace && !($0.isASCII && $0.asciiValue.map({ $0 < 32 }) == true) }
+        if scheme.caseInsensitiveCompare("javascript") == .orderedSame || scheme.caseInsensitiveCompare("vbscript") == .orderedSame {
+            return true
+        }
+        if scheme.caseInsensitiveCompare("data") == .orderedSame {
+            let rest = trimmed[trimmed.index(after: colon)...]
+            return !rest.lowercased().hasPrefix("image/")
+        }
+        return false
+    }
+
     static func unescapeHTMLEntities(_ text: String) -> String {
         var result = text.replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")

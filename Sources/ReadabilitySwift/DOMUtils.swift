@@ -3,7 +3,11 @@ import SwiftSoup
 
 enum DOMUtils {
     static func parse(_ html: String) throws -> Document {
-        do { return try SwiftSoup.parse(html) }
+        do {
+            let document = try SwiftSoup.parse(html)
+            document.outputSettings().prettyPrint(pretty: false)
+            return document
+        }
         catch { throw ReadabilityError.parsingFailed(error.localizedDescription) }
     }
 
