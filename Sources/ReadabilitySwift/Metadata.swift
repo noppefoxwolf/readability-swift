@@ -134,10 +134,15 @@ enum MetadataExtractor {
         return metadata
     }
 
-    private struct DOMBylineCandidate {
-        let text: String
-        let highConfidence: Bool
-    }
+private struct DOMBylineCandidate {
+    let text: String
+    let highConfidence: Bool
+}
+
+private struct BylineContext {
+    let isIgnorable: Bool
+    let isNoise: Bool
+}
 
     private static func findByline(in document: Document) throws -> DOMBylineCandidate? {
         if let standfirst = try findStandfirstByline(in: document) { return DOMBylineCandidate(text: standfirst, highConfidence: true) }
@@ -160,8 +165,8 @@ enum MetadataExtractor {
         let patterns = [".byline", ".pb-byline", ".author", ".by", ".writer", ".article-author", ".post-author", ".entry-author", "#byline", "#author", "[class*=author]", "[class*=byline]"]
         for pattern in patterns {
             for element in try document.select(pattern) {
-                guard !isIgnorableBylineContext(element) || elementHasBylineKeyword(element) else { continue }
-                guard !isNoiseBylineContext(element) || elementHasBylineKeyword(element) else { continue }
+                let context = bylineContext(for: element)
+                if context.isIgnorable || context.isNoise, !elementHasBylineKeyword(element) { continue }
                 let text = try cleanedCandidateText(element)
                 guard !text.isEmpty, text.utf8.count <= 100 else { continue }
                 let caps = looksLikeCapsAuthor(text)
@@ -176,7 +181,8 @@ enum MetadataExtractor {
             }
         }
         for element in try document.select("[class], [id]") {
-            guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element), elementHasBylineKeyword(element) else { continue }
+            let context = bylineContext(for: element)
+            guard !context.isIgnorable, !context.isNoise, elementHasBylineKeyword(element) else { continue }
             let text = try cleanedCandidateText(element)
             guard !text.isEmpty, text.utf8.count <= 120 else { continue }
             if Scoring.isValidByline(element, matchString: DOMUtils.classAndID(element)) || Utils.looksLikeByline(text) || looksLikeCapsAuthor(text) {
@@ -187,7 +193,8 @@ enum MetadataExtractor {
             }
         }
         for element in try document.select("address") {
-            guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element) else { continue }
+            let context = bylineContext(for: element)
+            guard !context.isIgnorable, !context.isNoise else { continue }
             let text = try cleanedCandidateText(element)
             if text.utf8.count <= 100 && (Utils.looksLikeByline(text) || Scoring.isValidByline(element, matchString: text) || looksLikeCapsAuthor(text)) {
                 guard let value = Utils.cleanBylineText(text) else { continue }
@@ -197,7 +204,8 @@ enum MetadataExtractor {
             }
         }
         for element in try document.select("p,div,span") {
-            guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element) else { continue }
+            let context = bylineContext(for: element)
+            guard !context.isIgnorable, !context.isNoise else { continue }
             let text = try cleanedCandidateText(element)
             guard text.utf8.count <= 120, Utils.looksLikeByline(text) || looksLikeCapsAuthor(text) else { continue }
             if !looksLikeDateline(text) {
@@ -210,8 +218,9 @@ enum MetadataExtractor {
     }
 
     private static func bylineCandidate(_ element: Element, explicit: Bool) throws -> String? {
-        guard !isIgnorableBylineContext(element), !isNoiseBylineContext(element) else { return nil }
-        if let parent = element.parent(), elementHasBylineKeyword(parent), !isIgnorableBylineContext(parent), let value = Utils.cleanBylineText(try cleanedCandidateText(parent)) { return value }
+        let context = bylineContext(for: element)
+        guard !context.isIgnorable, !context.isNoise else { return nil }
+        if let parent = element.parent(), elementHasBylineKeyword(parent), !bylineContext(for: parent).isIgnorable, let value = Utils.cleanBylineText(try cleanedCandidateText(parent)) { return value }
         let text = try cleanedCandidateText(element)
         guard !text.isEmpty else { return nil }
         let match = DOMUtils.classAndID(element)
@@ -355,26 +364,47 @@ enum MetadataExtractor {
         return nil
     }
 
-    private static func isIgnorableBylineContext(_ element: Element) -> Bool {
-        let keywords = [
-            "post-footer", "entry-footer", "article-footer", "section-footer", "postmeta", "meta-footer", "footer",
-            "profile", "sidebar", "widget", "comment", "bio", "related-post", "user-bylines", "byline__body",
-            "byline__title", "post-info", "entry-byline", "entry-author", "assetauthor", "contentpromo", "promo",
-            "asset-author", "videopromo", "poponscroll", "most-popular", "popular-stories", "videoslide",
-            "video-container", "card-box", "article-view-box", "cardbox", "article-content", "story-info"
-        ]
-        return DOMUtils.ancestors(element, limit: 16).contains { ancestor in
-            let marker = DOMUtils.classAndID(ancestor).lowercased()
-            let tag = ancestor.tagName().lowercased()
-            return ["footer", "aside", "nav"].contains(tag) || keywords.contains(where: marker.contains)
-        } || keywords.contains { DOMUtils.classAndID(element).lowercased().contains($0) }
-    }
+    private static let ignorableBylineKeywords = [
+        "post-footer", "entry-footer", "article-footer", "section-footer", "postmeta", "meta-footer", "footer",
+        "profile", "sidebar", "widget", "comment", "bio", "related-post", "user-bylines", "byline__body",
+        "byline__title", "post-info", "entry-byline", "entry-author", "assetauthor", "contentpromo", "promo",
+        "asset-author", "videopromo", "poponscroll", "most-popular", "popular-stories", "videoslide",
+        "video-container", "card-box", "article-view-box", "cardbox", "article-content", "story-info"
+    ]
 
-    private static func isNoiseBylineContext(_ element: Element) -> Bool {
-        let keywords = ["videopromo", "videoslide", "video-slide", "video-module", "poponscroll", "contentpromo", "promo", "popular", "most-popular", "popular-stories", "more-stories", "related", "recirc", "recommend", "newsletter", "signup", "asset", "social", "share", "gallery", "slideshow", "indepth", "indepth-module", "hot_stats", "hot-stats", "trending-badge", "views"]
-        return DOMUtils.ancestors(element, limit: 16).contains { ancestor in
-            keywords.contains { DOMUtils.classAndID(ancestor).lowercased().contains($0) }
+    private static let noiseBylineKeywords = [
+        "videopromo", "videoslide", "video-slide", "video-module", "poponscroll", "contentpromo", "promo",
+        "popular", "most-popular", "popular-stories", "more-stories", "related", "recirc", "recommend",
+        "newsletter", "signup", "asset", "social", "share", "gallery", "slideshow", "indepth",
+        "indepth-module", "hot_stats", "hot-stats", "trending-badge", "views"
+    ]
+
+    private static func bylineContext(for element: Element) -> BylineContext {
+        var isIgnorable = false
+        var isNoise = false
+        var ancestor = element.parent()
+        var depth = 0
+
+        while let current = ancestor, depth < 16 {
+            let marker = DOMUtils.classAndID(current).lowercased()
+            if !isIgnorable {
+                let tag = current.tagName().lowercased()
+                isIgnorable = ["footer", "aside", "nav"].contains(tag)
+                    || ignorableBylineKeywords.contains(where: marker.contains)
+            }
+            if !isNoise {
+                isNoise = noiseBylineKeywords.contains(where: marker.contains)
+            }
+            if isIgnorable && isNoise { break }
+            ancestor = current.parent()
+            depth += 1
         }
+
+        if !isIgnorable {
+            let marker = DOMUtils.classAndID(element).lowercased()
+            isIgnorable = ignorableBylineKeywords.contains(where: marker.contains)
+        }
+        return BylineContext(isIgnorable: isIgnorable, isNoise: isNoise)
     }
 
     private static func elementHasBylineKeyword(_ element: Element) -> Bool {
