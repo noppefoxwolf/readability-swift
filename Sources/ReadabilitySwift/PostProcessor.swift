@@ -1,6 +1,89 @@
 import SwiftSoup
+import Synchronization
 
 enum PostProcessor {
+    private static let unwantedElementRegexes = Mutex([
+        #/(?is)<form\b[^>]*?>.*?</form>/#,
+        #/(?is)<fieldset\b[^>]*?>.*?</fieldset>/#,
+        #/(?is)<footer\b[^>]*?>.*?</footer>/#,
+        #/(?is)<aside\b[^>]*?>.*?</aside>/#,
+        #/(?is)<object\b[^>]*?>.*?</object>/#,
+        #/(?is)<embed\b[^>]*?>.*?</embed>|<embed\b[^>]*?/?>/#,
+        #/(?is)<iframe\b[^>]*?>.*?</iframe>/#,
+        #/(?is)<input\b[^>]*?>.*?</input>|<input\b[^>]*?/?>/#,
+        #/(?is)<textarea\b[^>]*?>.*?</textarea>/#,
+        #/(?is)<select\b[^>]*?>.*?</select>/#,
+        #/(?is)<button\b[^>]*?>.*?</button>/#,
+        #/(?is)<link\b[^>]*?>.*?</link>|<link\b[^>]*?/?>/#,
+    ])
+
+    private static let navigationElementRegex = Mutex(#/(?is)<nav\b[^>]*?>.*?</nav>/#)
+
+    // Keep the regex order aligned with readabilityrs's wrapper removal matrix:
+    // tag, keyword, then class before id. Lazy matching stops at the first
+    // closing tag, rather than removing a complete nested DOM wrapper.
+    private static let shareWrapperRegexes = Mutex([
+        #/(?is)<div\b[^>]*?class="[^"]*?share[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?id="[^"]*?share[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?class="[^"]*?social[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?id="[^"]*?social[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?class="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?id="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<span\b[^>]*?class="[^"]*?share[^"]*?"[^>]*?>.*?</span>/#,
+        #/(?is)<span\b[^>]*?id="[^"]*?share[^"]*?"[^>]*?>.*?</span>/#,
+        #/(?is)<span\b[^>]*?class="[^"]*?social[^"]*?"[^>]*?>.*?</span>/#,
+        #/(?is)<span\b[^>]*?id="[^"]*?social[^"]*?"[^>]*?>.*?</span>/#,
+        #/(?is)<span\b[^>]*?class="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</span>/#,
+        #/(?is)<span\b[^>]*?id="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</span>/#,
+        #/(?is)<aside\b[^>]*?class="[^"]*?share[^"]*?"[^>]*?>.*?</aside>/#,
+        #/(?is)<aside\b[^>]*?id="[^"]*?share[^"]*?"[^>]*?>.*?</aside>/#,
+        #/(?is)<aside\b[^>]*?class="[^"]*?social[^"]*?"[^>]*?>.*?</aside>/#,
+        #/(?is)<aside\b[^>]*?id="[^"]*?social[^"]*?"[^>]*?>.*?</aside>/#,
+        #/(?is)<aside\b[^>]*?class="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</aside>/#,
+        #/(?is)<aside\b[^>]*?id="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</aside>/#,
+        #/(?is)<section\b[^>]*?class="[^"]*?share[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?id="[^"]*?share[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?class="[^"]*?social[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?id="[^"]*?social[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?class="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?id="[^"]*?sharedaddy[^"]*?"[^>]*?>.*?</section>/#,
+    ])
+
+    private static let navigationWrapperRegexes = Mutex([
+        #/(?is)<div\b[^>]*?class="[^"]*?nav[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?id="[^"]*?nav[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?class="[^"]*?navbar[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?id="[^"]*?navbar[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?class="[^"]*?menu[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?id="[^"]*?menu[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?class="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<div\b[^>]*?id="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</div>/#,
+        #/(?is)<section\b[^>]*?class="[^"]*?nav[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?id="[^"]*?nav[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?class="[^"]*?navbar[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?id="[^"]*?navbar[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?class="[^"]*?menu[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?id="[^"]*?menu[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?class="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<section\b[^>]*?id="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</section>/#,
+        #/(?is)<ul\b[^>]*?class="[^"]*?nav[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ul\b[^>]*?id="[^"]*?nav[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ul\b[^>]*?class="[^"]*?navbar[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ul\b[^>]*?id="[^"]*?navbar[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ul\b[^>]*?class="[^"]*?menu[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ul\b[^>]*?id="[^"]*?menu[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ul\b[^>]*?class="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ul\b[^>]*?id="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</ul>/#,
+        #/(?is)<ol\b[^>]*?class="[^"]*?nav[^"]*?"[^>]*?>.*?</ol>/#,
+        #/(?is)<ol\b[^>]*?id="[^"]*?nav[^"]*?"[^>]*?>.*?</ol>/#,
+        #/(?is)<ol\b[^>]*?class="[^"]*?navbar[^"]*?"[^>]*?>.*?</ol>/#,
+        #/(?is)<ol\b[^>]*?id="[^"]*?navbar[^"]*?"[^>]*?>.*?</ol>/#,
+        #/(?is)<ol\b[^>]*?class="[^"]*?menu[^"]*?"[^>]*?>.*?</ol>/#,
+        #/(?is)<ol\b[^>]*?id="[^"]*?menu[^"]*?"[^>]*?>.*?</ol>/#,
+        #/(?is)<ol\b[^>]*?class="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</ol>/#,
+        #/(?is)<ol\b[^>]*?id="[^"]*?breadcrumbs[^"]*?"[^>]*?>.*?</ol>/#,
+    ])
+
     static func prepArticle(
         _ html: String,
         cleanStyles: Bool,
@@ -58,156 +141,190 @@ enum PostProcessor {
     }
 
     private static func removingPresentationAttributes(from html: String) -> String {
-        let patterns: [Regex<Substring>] = [
-            #/(?i)\s+style\s*=\s*"[^"]*"/#,
-            #/(?i)\s+style\s*=\s*'[^']*'/#,
-            #/(?i)\s+align\s*=\s*["'][^"']*["']/#,
-            #/(?i)\s+bgcolor\s*=\s*["'][^"']*["']/#,
-            #/(?i)\s+valign\s*=\s*["'][^"']*["']/#,
-        ]
-        return patterns.reduce(html) { result, regex in
-            result.replacing(regex, with: "")
+        let source = Array(html.utf8)
+        var result: [UInt8] = []
+        result.reserveCapacity(source.count)
+        var index = 0
+
+        while index < source.count {
+            guard isASCIIWhitespace(source[index]) else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+
+            var cursor = index
+            while cursor < source.count, isASCIIWhitespace(source[cursor]) {
+                cursor += 1
+            }
+            let nameStart = cursor
+            guard let nameLength = presentationAttributeNameLength(in: source, at: cursor) else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+            cursor += nameLength
+            while cursor < source.count, isASCIIWhitespace(source[cursor]) {
+                cursor += 1
+            }
+            guard cursor < source.count, source[cursor] == UInt8(ascii: "=") else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+            cursor += 1
+            while cursor < source.count, isASCIIWhitespace(source[cursor]) {
+                cursor += 1
+            }
+            guard cursor < source.count, isQuote(source[cursor]) else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+
+            let openingQuote = source[cursor]
+            cursor += 1
+            let closesWithEitherQuote = asciiLowercased(source[nameStart]) != 0x73
+            while cursor < source.count,
+                  closesWithEitherQuote ? !isQuote(source[cursor]) : source[cursor] != openingQuote {
+                cursor += 1
+            }
+            guard cursor < source.count else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+
+            // Skip the leading whitespace and the complete quoted attribute.
+            index = cursor + 1
         }
+        return String(decoding: result, as: UTF8.self)
+    }
+
+    private static func presentationAttributeNameLength(in source: [UInt8], at index: Int) -> Int? {
+        guard index < source.count else { return nil }
+        switch asciiLowercased(source[index]) {
+        case 0x73 where matches("style", in: source, at: index): return 5
+        case 0x61 where matches("align", in: source, at: index): return 5
+        case 0x62 where matches("bgcolor", in: source, at: index): return 7
+        case 0x76 where matches("valign", in: source, at: index): return 6
+        default: return nil
+        }
+    }
+
+    private static func matches(_ value: String, in source: [UInt8], at index: Int) -> Bool {
+        switch value {
+        case "style":
+            return index + 5 <= source.count
+                && asciiLowercased(source[index]) == 0x73
+                && asciiLowercased(source[index + 1]) == 0x74
+                && asciiLowercased(source[index + 2]) == 0x79
+                && asciiLowercased(source[index + 3]) == 0x6C
+                && asciiLowercased(source[index + 4]) == 0x65
+        case "align":
+            return index + 5 <= source.count
+                && asciiLowercased(source[index]) == 0x61
+                && asciiLowercased(source[index + 1]) == 0x6C
+                && asciiLowercased(source[index + 2]) == 0x69
+                && asciiLowercased(source[index + 3]) == 0x67
+                && asciiLowercased(source[index + 4]) == 0x6E
+        case "bgcolor":
+            return index + 7 <= source.count
+                && asciiLowercased(source[index]) == 0x62
+                && asciiLowercased(source[index + 1]) == 0x67
+                && asciiLowercased(source[index + 2]) == 0x63
+                && asciiLowercased(source[index + 3]) == 0x6F
+                && asciiLowercased(source[index + 4]) == 0x6C
+                && asciiLowercased(source[index + 5]) == 0x6F
+                && asciiLowercased(source[index + 6]) == 0x72
+        case "valign":
+            return index + 6 <= source.count
+                && asciiLowercased(source[index]) == 0x76
+                && asciiLowercased(source[index + 1]) == 0x61
+                && asciiLowercased(source[index + 2]) == 0x6C
+                && asciiLowercased(source[index + 3]) == 0x69
+                && asciiLowercased(source[index + 4]) == 0x67
+                && asciiLowercased(source[index + 5]) == 0x6E
+        default:
+            return false
+        }
+    }
+
+    private static func asciiLowercased(_ byte: UInt8) -> UInt8 {
+        (0x41...0x5A).contains(byte) ? byte + 0x20 : byte
+    }
+
+    private static func isASCIIWhitespace(_ byte: UInt8) -> Bool {
+        byte == 0x20 || (0x09...0x0D).contains(byte)
+    }
+
+    private static func isQuote(_ byte: UInt8) -> Bool {
+        byte == UInt8(ascii: "\"") || byte == UInt8(ascii: "'")
     }
 
     private static func removingUnwantedElements(from html: String) -> String {
-        var result = html
-        for tag in ["form", "fieldset", "footer", "aside", "object", "iframe", "textarea", "select", "button"] {
-            result = removingElements(from: result, tag: tag, removesOpeningTagWithoutClosingTag: false)
+        unwantedElementRegexes.withLock { patterns in
+            removingMatches(from: html, with: patterns)
         }
-        for tag in ["embed", "input", "link"] {
-            result = removingElements(from: result, tag: tag, removesOpeningTagWithoutClosingTag: true)
-        }
-        return result
     }
 
     private static func removingShareElements(from html: String) -> String {
-        removingWrappers(
-            from: html,
-            tags: ["div", "span", "aside", "section"],
-            keywords: ["share", "social", "sharedaddy"]
-        )
+        shareWrapperRegexes.withLock { patterns in
+            removingWrapperMatches(
+                from: html,
+                with: patterns,
+                tags: ["div", "span", "aside", "section"],
+                keywords: ["share", "social", "sharedaddy"]
+            )
+        }
     }
 
     private static func removingNavigationElements(from html: String) -> String {
-        let withoutNav = removingElements(
-            from: html,
-            tag: "nav",
-            removesOpeningTagWithoutClosingTag: false
-        )
-        return removingWrappers(
-            from: withoutNav,
-            tags: ["div", "section", "ul", "ol"],
-            keywords: ["nav", "navbar", "menu", "breadcrumbs"]
-        )
+        let withoutNav = navigationElementRegex.withLock { html.replacing($0, with: "") }
+        return navigationWrapperRegexes.withLock { patterns in
+            removingWrapperMatches(
+                from: withoutNav,
+                with: patterns,
+                tags: ["div", "section", "ul", "ol"],
+                keywords: ["nav", "navbar", "menu", "breadcrumbs"]
+            )
+        }
     }
 
-    private static func removingWrappers(from html: String, tags: [String], keywords: [String]) -> String {
+    private static func removingMatches(from html: String, with patterns: [Regex<Substring>]) -> String {
+        patterns.reduce(html) { result, pattern in
+            result.replacing(pattern, with: "")
+        }
+    }
+
+    // Wrapper patterns are ordered tag → keyword → class → id. Preserve that
+    // order, but skip a regex when its ASCII ingredients cannot occur at all.
+    // This avoids most full-document regex scans on pages without those wrappers.
+    private static func removingWrapperMatches(
+        from html: String,
+        with patterns: [Regex<Substring>],
+        tags: [String],
+        keywords: [String]
+    ) -> String {
+        let lowercasedHTML = html.lowercased()
         var result = html
-        // This deliberately follows readabilityrs's serialized-HTML regexes.
-        // A DOM removal would delete an entire nested wrapper, while the Rust
-        // implementation stops at the first matching closing tag.
-        for tag in tags {
-            for keyword in keywords {
-                for attribute in ["class", "id"] {
-                    result = removingWrapper(
-                        from: result,
-                        tag: tag,
-                        attribute: attribute,
-                        containing: keyword
-                    )
+        for (tagIndex, tag) in tags.enumerated() {
+            guard lowercasedHTML.contains("<\(tag)") else { continue }
+            for (keywordIndex, keyword) in keywords.enumerated() {
+                let patternIndex = (tagIndex * keywords.count + keywordIndex) * 2
+                if lowercasedHTML.contains("class=\"") && lowercasedHTML.contains(keyword) {
+                    result = result.replacing(patterns[patternIndex], with: "")
+                }
+                if lowercasedHTML.contains("id=\"") && lowercasedHTML.contains(keyword) {
+                    result = result.replacing(patterns[patternIndex + 1], with: "")
                 }
             }
         }
         return result
     }
 
-    private static func removingWrapper(
-        from html: String,
-        tag: String,
-        attribute: String,
-        containing keyword: String
-    ) -> String {
-        var result = html
-        let openingNeedle = "<\(tag)"
-        let closingNeedle = "</\(tag)>"
-        var searchStart = result.startIndex
-
-        while searchStart < result.endIndex {
-            guard let openingRange = result.firstASCIICaseInsensitiveRange(
-                of: openingNeedle,
-                in: searchStart..<result.endIndex
-            ) else { break }
-            let boundary = openingRange.upperBound
-            guard boundary == result.endIndex || !isRegexWordCharacter(result[boundary]) else {
-                searchStart = boundary
-                continue
-            }
-            guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex) else { break }
-            let openingTag = result[openingRange.lowerBound..<openingEnd.upperBound].lowercased()
-            let attributePrefix = "\(attribute.lowercased())=\""
-            guard let attributeRange = openingTag.firstRange(of: attributePrefix) else {
-                searchStart = boundary
-                continue
-            }
-            let valueStart = attributeRange.upperBound
-            guard let valueEnd = openingTag[valueStart...].firstIndex(of: "\"") else {
-                searchStart = boundary
-                continue
-            }
-            guard openingTag[valueStart..<valueEnd].contains(keyword.lowercased()) else {
-                searchStart = boundary
-                continue
-            }
-            guard let closingRange = result.firstASCIICaseInsensitiveRange(
-                of: closingNeedle,
-                in: openingEnd.upperBound..<result.endIndex
-            ) else { break }
-            result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
-            searchStart = result.startIndex
-        }
-        return result
-    }
-
     private static func isRegexWordCharacter(_ character: Character) -> Bool {
         character == "_" || character.isLetter || character.isNumber
-    }
-
-    private static func removingElements(
-        from html: String,
-        tag: String,
-        removesOpeningTagWithoutClosingTag: Bool
-    ) -> String {
-        var result = html
-        let openingNeedle = "<\(tag)"
-        let closingNeedle = "</\(tag)>"
-        var searchStart = result.startIndex
-
-        while searchStart < result.endIndex {
-            guard let openingRange = result.firstASCIICaseInsensitiveRange(
-                of: openingNeedle,
-                in: searchStart..<result.endIndex
-            ) else { break }
-            let boundary = openingRange.upperBound
-            guard boundary == result.endIndex || !isRegexWordCharacter(result[boundary]) else {
-                searchStart = boundary
-                continue
-            }
-            guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex) else { break }
-            if let closingRange = result.firstASCIICaseInsensitiveRange(
-                of: closingNeedle,
-                in: openingEnd.upperBound..<result.endIndex
-            ) {
-                result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
-                searchStart = result.startIndex
-            } else if removesOpeningTagWithoutClosingTag {
-                result.removeSubrange(openingRange.lowerBound..<openingEnd.upperBound)
-                searchStart = result.startIndex
-            } else {
-                searchStart = openingEnd.upperBound
-            }
-        }
-        return result
     }
 
     private static func removingEmptyParagraphs(from html: String) -> String {
@@ -242,8 +359,9 @@ enum PostProcessor {
                   ) else { break }
             let content = String(result[openingEnd.upperBound..<closingRange.lowerBound])
             if paragraphContentIsEmpty(content) {
+                let resumeOffset = utf8Offset(of: openingRange.lowerBound, in: result)
                 result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
-                searchStart = result.startIndex
+                searchStart = index(in: result, atUTF8Offset: resumeOffset)
             } else {
                 searchStart = closingRange.upperBound
             }
@@ -265,5 +383,20 @@ enum PostProcessor {
     private static func removingBreakTags(from content: String) -> String {
         content.replacing(#/(?i)<br\s*/?>/#, with: "")
             .trimmed()
+    }
+
+    private static func utf8Offset(of index: String.Index, in string: String) -> Int {
+        guard let utf8Index = index.samePosition(in: string.utf8) else {
+            return 0
+        }
+        return string.utf8.distance(from: string.utf8.startIndex, to: utf8Index)
+    }
+
+    private static func index(in string: String, atUTF8Offset offset: Int) -> String.Index {
+        let utf8Index = string.utf8.index(string.utf8.startIndex, offsetBy: offset)
+        guard let index = String.Index(utf8Index, within: string) else {
+            return string.startIndex
+        }
+        return index
     }
 }

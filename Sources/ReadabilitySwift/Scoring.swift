@@ -7,9 +7,9 @@ enum Scoring {
         for attribute in ["class", "id"] {
             let value = DOMUtils.attribute(attribute, of: element).lowercased()
             guard !value.isEmpty else { continue }
-            if matches(value, Constants.negative) {
+            if Constants.isNegative(value) {
                 weight -= 25
-            } else if matches(value, Constants.positive) {
+            } else if Constants.isPositive(value) {
                 weight += 25
             }
         }
@@ -35,7 +35,14 @@ enum Scoring {
         // readabilityrs scores Rust str::len() values, which are UTF-8 bytes.
         // String.count would change thresholds for non-ASCII articles.
         guard text.utf8.count >= 25 else { return 0 }
-        let commaCount = text.filter { ",،﹐､，；;⸲⹁⸴⹉⹌".contains($0) }.count
+        // readabilityrs's regex counts Unicode scalar matches, not extended
+        // grapheme clusters. unicodeScalars keeps that behavior while avoiding
+        // Character iteration's grapheme-boundary work in this hot path.
+        let commaCount = text.unicodeScalars.reduce(into: 0) { count, scalar in
+            if isCommaScalar(scalar.value) {
+                count += 1
+            }
+        }
         var score = 1.0 + Double(commaCount)
         score += min(Double(text.utf8.count) / 100.0, 3.0)
         score *= 1.0 - (try DOMUtils.linkDensity(element)) + linkDensityModifier
@@ -50,10 +57,19 @@ enum Scoring {
         let rel = DOMUtils.attribute("rel", of: element).lowercased()
         let itemprop = DOMUtils.attribute("itemprop", of: element).lowercased()
         let length = DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count
-        return (rel == "author" || itemprop.contains("author") || matches(matchString, Constants.byline)) && length > 0 && length < 100
+        return (rel == "author" || itemprop.contains("author") || Constants.isByline(matchString)) && length > 0 && length < 100
     }
 
     private static func matches(_ value: String, _ regex: Regex<Substring>) -> Bool {
         value.firstMatch(of: regex) != nil
+    }
+
+    private static func isCommaScalar(_ value: UInt32) -> Bool {
+        switch value {
+        case 0x002C, 0x060C, 0xFE50, 0xFE10, 0xFE11, 0x2E41, 0x2E34, 0x2E32, 0xFF0C:
+            true
+        default:
+            false
+        }
     }
 }

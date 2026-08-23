@@ -82,7 +82,7 @@ enum ContentExtractor {
                 guard DOMUtils.isProbablyVisible(element), DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count >= 25 else { continue }
                 if flags.contains(.stripUnlikelies) {
                     let match = DOMUtils.classAndID(element)
-                    if matches(match, Constants.unlikelyCandidates) && !matches(match, Constants.okMaybeItsACandidate) { continue }
+                    if Constants.isUnlikelyCandidate(match) && !Constants.isMaybeCandidate(match) { continue }
                 }
                 result.append(element)
             }
@@ -266,7 +266,7 @@ enum ContentExtractor {
                 guard textLength >= 160,
                       density < 0.35,
                       density < bestDensity - 0.15,
-                      !(candidateWeight < 0 && !matches(marker, Constants.positive)),
+                      !(candidateWeight < 0 && !Constants.isPositive(marker)),
                       paragraphCount > 0 || textLength >= 300 else { return nil }
                 return (candidate.element, candidate.score)
             }.max(by: { $0.1 < $1.1 })
@@ -334,7 +334,7 @@ enum ContentExtractor {
         let text = DOMUtils.getInnerText(element, normalizeSpaces: false)
         guard !text.isEmpty else { return false }
         let classID = DOMUtils.classAndID(element)
-        if matches(classID, Constants.unlikelyCandidates) && !matches(classID, Constants.okMaybeItsACandidate) {
+        if Constants.isUnlikelyCandidate(classID) && !Constants.isMaybeCandidate(classID) {
             return false
         }
         let density = try DOMUtils.linkDensity(element)
@@ -374,12 +374,26 @@ enum ContentExtractor {
         // while outerHtml() follows SwiftSoup's own void-tag and formatting
         // rules. Serialize explicitly to retain DIV-to-P and sanitizing parity.
         guard DOMUtils.isProbablyVisible(element) else { return "" }
+        var html = ""
+        try appendSerializedElement(element, policy: policy, to: &html)
+        return html
+    }
+
+    private static func appendSerializedElement(
+        _ element: Element,
+        policy: SerializationPolicy,
+        to html: inout String
+    ) throws {
+        // The root has already checked all ancestors. A child only needs a local
+        // check because a hidden ancestor would not have been traversed.
+        guard DOMUtils.isLocallyVisible(element) else { return }
         let originalTag = element.tagName().lowercased()
-        if policy.sanitizesContent && ["script", "style", "iframe", "object", "embed", "form", "noscript", "template"].contains(originalTag) {
-            return ""
+        if policy.sanitizesContent && isUnsafeElement(originalTag) {
+            return
         }
         let tag = shouldConvertDivToParagraph(element) ? "p" : originalTag
-        var html = "<\(tag)"
+        html.append("<")
+        html.append(contentsOf: tag)
         if let attributes = element.getAttributes() {
             for attribute in attributes.asList() {
                 let name = attribute.getKey().lowercased()
@@ -396,22 +410,43 @@ enum ContentExtractor {
                 }
                 let serializedAttribute = attribute.clone()
                 serializedAttribute.setValue(value: Array(value.utf8))
-                html += " \(serializedAttribute.html())"
+                html.append(" ")
+                html.append(contentsOf: serializedAttribute.html())
             }
         }
-        let voidElements = Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"])
-        if voidElements.contains(tag) { return html + " />" }
-        html += ">"
+        if isVoidElement(tag) {
+            html.append(" />")
+            return
+        }
+        html.append(">")
         for node in element.getChildNodes() {
             if let child = node as? Element {
-                html += try serializeElement(child, policy: policy)
+                try appendSerializedElement(child, policy: policy, to: &html)
             } else if let text = node as? TextNode {
-                html += Entities.escape(text.getWholeText())
+                html.append(contentsOf: Entities.escape(text.getWholeText()))
             } else if let comment = node as? Comment, !policy.sanitizesContent {
-                html += "<!--\(comment.getData())-->"
+                html.append("<!--")
+                html.append(contentsOf: comment.getData())
+                html.append("-->")
             }
         }
-        return html + "</\(tag)>"
+        html.append("</")
+        html.append(contentsOf: tag)
+        html.append(">")
+    }
+
+    private static func isUnsafeElement(_ tag: String) -> Bool {
+        switch tag {
+        case "script", "style", "iframe", "object", "embed", "form", "noscript", "template": true
+        default: false
+        }
+    }
+
+    private static func isVoidElement(_ tag: String) -> Bool {
+        switch tag {
+        case "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr": true
+        default: false
+        }
     }
 
     private static func shouldConvertDivToParagraph(_ element: Element) -> Bool {

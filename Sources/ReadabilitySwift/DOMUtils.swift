@@ -88,15 +88,22 @@ enum DOMUtils {
     static func isProbablyVisible(_ element: Element) -> Bool {
         var current: Element? = element
         while let node = current {
-            if node.hasAttr("hidden") { return false }
-            let ariaHidden = attribute("aria-hidden", of: node).lowercased()
-            let isFallbackImage = classAndID(node).lowercased().contains("fallback-image")
-            if ariaHidden == "true" && !isFallbackImage { return false }
-            let style = attribute("style", of: node).lowercased()
-            if style.contains("display:none") || style.contains("display: none") || style.contains("visibility:hidden") || style.contains("visibility: hidden") { return false }
+            if !isLocallyVisible(node) { return false }
             current = node.parent()
         }
         return true
+    }
+
+    // A serializer which has already checked an ancestor only needs this local
+    // check for each child. Walking every ancestor again is O(n * depth).
+    static func isLocallyVisible(_ element: Element) -> Bool {
+        if element.hasAttr("hidden") { return false }
+        let ariaHidden = attribute("aria-hidden", of: element).lowercased()
+        let isFallbackImage = classAndID(element).lowercased().contains("fallback-image")
+        if ariaHidden == "true" && !isFallbackImage { return false }
+        let style = attribute("style", of: element).lowercased()
+        return !style.contains("display:none") && !style.contains("display: none")
+            && !style.contains("visibility:hidden") && !style.contains("visibility: hidden")
     }
 
     static func articleDirection(_ document: Document) throws -> String? {
