@@ -2,10 +2,6 @@ import SwiftSoup
 import Synchronization
 
 enum PostProcessor {
-    private static let presentationAttributesRegex = Mutex(
-        #/(?i)\s+(?:style\s*=\s*(?:"[^"]*"|'[^']*')|(?:align|bgcolor|valign)\s*=\s*["'][^"']*["'])/#
-    )
-
     private static let unwantedElementRegexes = Mutex([
         #/(?is)<form\b[^>]*?>.*?</form>/#,
         #/(?is)<fieldset\b[^>]*?>.*?</fieldset>/#,
@@ -145,9 +141,125 @@ enum PostProcessor {
     }
 
     private static func removingPresentationAttributes(from html: String) -> String {
-        presentationAttributesRegex.withLock { regex in
-            html.replacing(regex, with: "")
+        let source = Array(html.utf8)
+        var result: [UInt8] = []
+        result.reserveCapacity(source.count)
+        var index = 0
+
+        while index < source.count {
+            guard isASCIIWhitespace(source[index]) else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+
+            var cursor = index
+            while cursor < source.count, isASCIIWhitespace(source[cursor]) {
+                cursor += 1
+            }
+            let nameStart = cursor
+            guard let nameLength = presentationAttributeNameLength(in: source, at: cursor) else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+            cursor += nameLength
+            while cursor < source.count, isASCIIWhitespace(source[cursor]) {
+                cursor += 1
+            }
+            guard cursor < source.count, source[cursor] == UInt8(ascii: "=") else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+            cursor += 1
+            while cursor < source.count, isASCIIWhitespace(source[cursor]) {
+                cursor += 1
+            }
+            guard cursor < source.count, isQuote(source[cursor]) else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+
+            let openingQuote = source[cursor]
+            cursor += 1
+            let closesWithEitherQuote = asciiLowercased(source[nameStart]) != 0x73
+            while cursor < source.count,
+                  closesWithEitherQuote ? !isQuote(source[cursor]) : source[cursor] != openingQuote {
+                cursor += 1
+            }
+            guard cursor < source.count else {
+                result.append(source[index])
+                index += 1
+                continue
+            }
+
+            // Skip the leading whitespace and the complete quoted attribute.
+            index = cursor + 1
         }
+        return String(decoding: result, as: UTF8.self)
+    }
+
+    private static func presentationAttributeNameLength(in source: [UInt8], at index: Int) -> Int? {
+        guard index < source.count else { return nil }
+        switch asciiLowercased(source[index]) {
+        case 0x73 where matches("style", in: source, at: index): return 5
+        case 0x61 where matches("align", in: source, at: index): return 5
+        case 0x62 where matches("bgcolor", in: source, at: index): return 7
+        case 0x76 where matches("valign", in: source, at: index): return 6
+        default: return nil
+        }
+    }
+
+    private static func matches(_ value: String, in source: [UInt8], at index: Int) -> Bool {
+        switch value {
+        case "style":
+            return index + 5 <= source.count
+                && asciiLowercased(source[index]) == 0x73
+                && asciiLowercased(source[index + 1]) == 0x74
+                && asciiLowercased(source[index + 2]) == 0x79
+                && asciiLowercased(source[index + 3]) == 0x6C
+                && asciiLowercased(source[index + 4]) == 0x65
+        case "align":
+            return index + 5 <= source.count
+                && asciiLowercased(source[index]) == 0x61
+                && asciiLowercased(source[index + 1]) == 0x6C
+                && asciiLowercased(source[index + 2]) == 0x69
+                && asciiLowercased(source[index + 3]) == 0x67
+                && asciiLowercased(source[index + 4]) == 0x6E
+        case "bgcolor":
+            return index + 7 <= source.count
+                && asciiLowercased(source[index]) == 0x62
+                && asciiLowercased(source[index + 1]) == 0x67
+                && asciiLowercased(source[index + 2]) == 0x63
+                && asciiLowercased(source[index + 3]) == 0x6F
+                && asciiLowercased(source[index + 4]) == 0x6C
+                && asciiLowercased(source[index + 5]) == 0x6F
+                && asciiLowercased(source[index + 6]) == 0x72
+        case "valign":
+            return index + 6 <= source.count
+                && asciiLowercased(source[index]) == 0x76
+                && asciiLowercased(source[index + 1]) == 0x61
+                && asciiLowercased(source[index + 2]) == 0x6C
+                && asciiLowercased(source[index + 3]) == 0x69
+                && asciiLowercased(source[index + 4]) == 0x67
+                && asciiLowercased(source[index + 5]) == 0x6E
+        default:
+            return false
+        }
+    }
+
+    private static func asciiLowercased(_ byte: UInt8) -> UInt8 {
+        (0x41...0x5A).contains(byte) ? byte + 0x20 : byte
+    }
+
+    private static func isASCIIWhitespace(_ byte: UInt8) -> Bool {
+        byte == 0x20 || (0x09...0x0D).contains(byte)
+    }
+
+    private static func isQuote(_ byte: UInt8) -> Bool {
+        byte == UInt8(ascii: "\"") || byte == UInt8(ascii: "'")
     }
 
     private static func removingUnwantedElements(from html: String) -> String {
