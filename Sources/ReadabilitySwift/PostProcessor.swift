@@ -2,6 +2,27 @@ import SwiftSoup
 import Synchronization
 
 enum PostProcessor {
+    private static let presentationAttributesRegex = Mutex(
+        #/(?i)\s+(?:style\s*=\s*(?:"[^"]*"|'[^']*')|(?:align|bgcolor|valign)\s*=\s*["'][^"']*["'])/#
+    )
+
+    private static let unwantedElementRegexes = Mutex([
+        #/(?is)<form\b[^>]*?>.*?</form>/#,
+        #/(?is)<fieldset\b[^>]*?>.*?</fieldset>/#,
+        #/(?is)<footer\b[^>]*?>.*?</footer>/#,
+        #/(?is)<aside\b[^>]*?>.*?</aside>/#,
+        #/(?is)<object\b[^>]*?>.*?</object>/#,
+        #/(?is)<embed\b[^>]*?>.*?</embed>|<embed\b[^>]*?/?>/#,
+        #/(?is)<iframe\b[^>]*?>.*?</iframe>/#,
+        #/(?is)<input\b[^>]*?>.*?</input>|<input\b[^>]*?/?>/#,
+        #/(?is)<textarea\b[^>]*?>.*?</textarea>/#,
+        #/(?is)<select\b[^>]*?>.*?</select>/#,
+        #/(?is)<button\b[^>]*?>.*?</button>/#,
+        #/(?is)<link\b[^>]*?>.*?</link>|<link\b[^>]*?/?>/#,
+    ])
+
+    private static let navigationElementRegex = Mutex(#/(?is)<nav\b[^>]*?>.*?</nav>/#)
+
     // Keep the regex order aligned with readabilityrs's wrapper removal matrix:
     // tag, keyword, then class before id. Lazy matching stops at the first
     // closing tag, rather than removing a complete nested DOM wrapper.
@@ -124,27 +145,15 @@ enum PostProcessor {
     }
 
     private static func removingPresentationAttributes(from html: String) -> String {
-        let patterns: [Regex<Substring>] = [
-            #/(?i)\s+style\s*=\s*"[^"]*"/#,
-            #/(?i)\s+style\s*=\s*'[^']*'/#,
-            #/(?i)\s+align\s*=\s*["'][^"']*["']/#,
-            #/(?i)\s+bgcolor\s*=\s*["'][^"']*["']/#,
-            #/(?i)\s+valign\s*=\s*["'][^"']*["']/#,
-        ]
-        return patterns.reduce(html) { result, regex in
-            result.replacing(regex, with: "")
+        presentationAttributesRegex.withLock { regex in
+            html.replacing(regex, with: "")
         }
     }
 
     private static func removingUnwantedElements(from html: String) -> String {
-        var result = html
-        for tag in ["form", "fieldset", "footer", "aside", "object", "iframe", "textarea", "select", "button"] {
-            result = removingElements(from: result, tag: tag, removesOpeningTagWithoutClosingTag: false)
+        unwantedElementRegexes.withLock { patterns in
+            removingMatches(from: html, with: patterns)
         }
-        for tag in ["embed", "input", "link"] {
-            result = removingElements(from: result, tag: tag, removesOpeningTagWithoutClosingTag: true)
-        }
-        return result
     }
 
     private static func removingShareElements(from html: String) -> String {
@@ -154,11 +163,7 @@ enum PostProcessor {
     }
 
     private static func removingNavigationElements(from html: String) -> String {
-        let withoutNav = removingElements(
-            from: html,
-            tag: "nav",
-            removesOpeningTagWithoutClosingTag: false
-        )
+        let withoutNav = navigationElementRegex.withLock { html.replacing($0, with: "") }
         return navigationWrapperRegexes.withLock { patterns in
             removingMatches(from: withoutNav, with: patterns)
         }
@@ -172,45 +177,6 @@ enum PostProcessor {
 
     private static func isRegexWordCharacter(_ character: Character) -> Bool {
         character == "_" || character.isLetter || character.isNumber
-    }
-
-    private static func removingElements(
-        from html: String,
-        tag: String,
-        removesOpeningTagWithoutClosingTag: Bool
-    ) -> String {
-        var result = html
-        let openingNeedle = "<\(tag)"
-        let closingNeedle = "</\(tag)>"
-        var searchStart = result.startIndex
-
-        while searchStart < result.endIndex {
-            guard let openingRange = result.firstASCIICaseInsensitiveRange(
-                of: openingNeedle,
-                in: searchStart..<result.endIndex
-            ) else { break }
-            let boundary = openingRange.upperBound
-            guard boundary == result.endIndex || !isRegexWordCharacter(result[boundary]) else {
-                searchStart = boundary
-                continue
-            }
-            guard let openingEnd = result.firstRange(of: ">", in: boundary..<result.endIndex) else { break }
-            if let closingRange = result.firstASCIICaseInsensitiveRange(
-                of: closingNeedle,
-                in: openingEnd.upperBound..<result.endIndex
-            ) {
-                let resumeOffset = utf8Offset(of: openingRange.lowerBound, in: result)
-                result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
-                searchStart = index(in: result, atUTF8Offset: resumeOffset)
-            } else if removesOpeningTagWithoutClosingTag {
-                let resumeOffset = utf8Offset(of: openingRange.lowerBound, in: result)
-                result.removeSubrange(openingRange.lowerBound..<openingEnd.upperBound)
-                searchStart = index(in: result, atUTF8Offset: resumeOffset)
-            } else {
-                searchStart = openingEnd.upperBound
-            }
-        }
-        return result
     }
 
     private static func removingEmptyParagraphs(from html: String) -> String {
