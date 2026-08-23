@@ -82,7 +82,7 @@ enum ContentExtractor {
                 guard DOMUtils.isProbablyVisible(element), DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count >= 25 else { continue }
                 if flags.contains(.stripUnlikelies) {
                     let match = DOMUtils.classAndID(element)
-                    if matches(match, Constants.unlikelyCandidates) && !matches(match, Constants.okMaybeItsACandidate) { continue }
+                    if Constants.isUnlikelyCandidate(match) && !Constants.isMaybeCandidate(match) { continue }
                 }
                 result.append(element)
             }
@@ -266,7 +266,7 @@ enum ContentExtractor {
                 guard textLength >= 160,
                       density < 0.35,
                       density < bestDensity - 0.15,
-                      !(candidateWeight < 0 && !matches(marker, Constants.positive)),
+                      !(candidateWeight < 0 && !Constants.isPositive(marker)),
                       paragraphCount > 0 || textLength >= 300 else { return nil }
                 return (candidate.element, candidate.score)
             }.max(by: { $0.1 < $1.1 })
@@ -334,7 +334,7 @@ enum ContentExtractor {
         let text = DOMUtils.getInnerText(element, normalizeSpaces: false)
         guard !text.isEmpty else { return false }
         let classID = DOMUtils.classAndID(element)
-        if matches(classID, Constants.unlikelyCandidates) && !matches(classID, Constants.okMaybeItsACandidate) {
+        if Constants.isUnlikelyCandidate(classID) && !Constants.isMaybeCandidate(classID) {
             return false
         }
         let density = try DOMUtils.linkDensity(element)

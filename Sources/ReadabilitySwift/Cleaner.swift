@@ -170,7 +170,7 @@ enum Cleaner {
         let headingDensity = try textDensity(element, selector: "h1,h2,h3,h4,h5,h6")
         let embeds = try element.select("object,embed,iframe")
         if embeds.contains(where: { nodeHasAllowedVideo($0, allowedVideoRegex: allowedVideoRegex) }) { return false }
-        if matches(text, Constants.adWords) || matches(text, Constants.loadingWords) { return true }
+        if Constants.isAdvertisementWord(text) || Constants.isLoadingWord(text) { return true }
         let textDensityValue = try textDensity(element, selector: "span,li,td,blockquote,dl,div,img,ol,p,pre,table,ul")
         let isFigureChild = DOMUtils.ancestors(element, limit: 0).contains { $0.tagName().lowercased() == "figure" }
 
@@ -230,8 +230,8 @@ enum Cleaner {
         var weight = 0
         for attribute in ["class", "id"] {
             let value = try element.attr(attribute)
-            if matches(value, Constants.negative) { weight -= 25 }
-            if matches(value, Constants.positive) { weight += 25 }
+            if Constants.isNegative(value) { weight -= 25 }
+            if Constants.isPositive(value) { weight += 25 }
         }
         return weight
     }
@@ -251,13 +251,13 @@ enum Cleaner {
         if let attributes = element.getAttributes() {
             if attributes.asList().contains(where: { attribute in
                 let value = attribute.getValue()
-                return matches(value, Constants.videos)
+                return Constants.isVideo(value)
                     || allowedVideoRegex.map { regex in value.firstMatch(of: regex) != nil } == true
             }) { return true }
         }
         guard element.tagName().lowercased() == "object" else { return false }
         let content = DOMUtils.textContent(element)
-        return matches(content, Constants.videos)
+        return Constants.isVideo(content)
             || allowedVideoRegex.map { content.firstMatch(of: $0) != nil } == true
     }
 

@@ -467,7 +467,7 @@ enum MetadataExtractor {
 
     private static func isArticleType(_ value: Any?) -> Bool {
         guard let type = value as? String else { return false }
-        return type.wholeMatch(of: Constants.jsonLDArticleTypes) != nil
+        return Constants.isJSONLDArticleType(type)
     }
 
     private static func string(_ value: Any?) -> String? {

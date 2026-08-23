@@ -7,9 +7,9 @@ enum Scoring {
         for attribute in ["class", "id"] {
             let value = DOMUtils.attribute(attribute, of: element).lowercased()
             guard !value.isEmpty else { continue }
-            if matches(value, Constants.negative) {
+            if Constants.isNegative(value) {
                 weight -= 25
-            } else if matches(value, Constants.positive) {
+            } else if Constants.isPositive(value) {
                 weight += 25
             }
         }
@@ -50,7 +50,7 @@ enum Scoring {
         let rel = DOMUtils.attribute("rel", of: element).lowercased()
         let itemprop = DOMUtils.attribute("itemprop", of: element).lowercased()
         let length = DOMUtils.getInnerText(element, normalizeSpaces: false).utf8.count
-        return (rel == "author" || itemprop.contains("author") || matches(matchString, Constants.byline)) && length > 0 && length < 100
+        return (rel == "author" || itemprop.contains("author") || Constants.isByline(matchString)) && length > 0 && length < 100
     }
 
     private static func matches(_ value: String, _ regex: Regex<Substring>) -> Bool {
