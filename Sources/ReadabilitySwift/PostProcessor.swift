@@ -270,14 +270,24 @@ enum PostProcessor {
 
     private static func removingShareElements(from html: String) -> String {
         shareWrapperRegexes.withLock { patterns in
-            removingMatches(from: html, with: patterns)
+            removingWrapperMatches(
+                from: html,
+                with: patterns,
+                tags: ["div", "span", "aside", "section"],
+                keywords: ["share", "social", "sharedaddy"]
+            )
         }
     }
 
     private static func removingNavigationElements(from html: String) -> String {
         let withoutNav = navigationElementRegex.withLock { html.replacing($0, with: "") }
         return navigationWrapperRegexes.withLock { patterns in
-            removingMatches(from: withoutNav, with: patterns)
+            removingWrapperMatches(
+                from: withoutNav,
+                with: patterns,
+                tags: ["div", "section", "ul", "ol"],
+                keywords: ["nav", "navbar", "menu", "breadcrumbs"]
+            )
         }
     }
 
@@ -285,6 +295,32 @@ enum PostProcessor {
         patterns.reduce(html) { result, pattern in
             result.replacing(pattern, with: "")
         }
+    }
+
+    // Wrapper patterns are ordered tag → keyword → class → id. Preserve that
+    // order, but skip a regex when its ASCII ingredients cannot occur at all.
+    // This avoids most full-document regex scans on pages without those wrappers.
+    private static func removingWrapperMatches(
+        from html: String,
+        with patterns: [Regex<Substring>],
+        tags: [String],
+        keywords: [String]
+    ) -> String {
+        let lowercasedHTML = html.lowercased()
+        var result = html
+        for (tagIndex, tag) in tags.enumerated() {
+            guard lowercasedHTML.contains("<\(tag)") else { continue }
+            for (keywordIndex, keyword) in keywords.enumerated() {
+                let patternIndex = (tagIndex * keywords.count + keywordIndex) * 2
+                if lowercasedHTML.contains("class=\"") && lowercasedHTML.contains(keyword) {
+                    result = result.replacing(patterns[patternIndex], with: "")
+                }
+                if lowercasedHTML.contains("id=\"") && lowercasedHTML.contains(keyword) {
+                    result = result.replacing(patterns[patternIndex + 1], with: "")
+                }
+            }
+        }
+        return result
     }
 
     private static func isRegexWordCharacter(_ character: Character) -> Bool {
