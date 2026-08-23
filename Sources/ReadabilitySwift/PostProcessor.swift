@@ -163,8 +163,9 @@ enum PostProcessor {
                 of: closingNeedle,
                 in: openingEnd.upperBound..<result.endIndex
             ) else { break }
+            let resumeOffset = utf8Offset(of: openingRange.lowerBound, in: result)
             result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
-            searchStart = result.startIndex
+            searchStart = index(in: result, atUTF8Offset: resumeOffset)
         }
         return result
     }
@@ -198,11 +199,13 @@ enum PostProcessor {
                 of: closingNeedle,
                 in: openingEnd.upperBound..<result.endIndex
             ) {
+                let resumeOffset = utf8Offset(of: openingRange.lowerBound, in: result)
                 result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
-                searchStart = result.startIndex
+                searchStart = index(in: result, atUTF8Offset: resumeOffset)
             } else if removesOpeningTagWithoutClosingTag {
+                let resumeOffset = utf8Offset(of: openingRange.lowerBound, in: result)
                 result.removeSubrange(openingRange.lowerBound..<openingEnd.upperBound)
-                searchStart = result.startIndex
+                searchStart = index(in: result, atUTF8Offset: resumeOffset)
             } else {
                 searchStart = openingEnd.upperBound
             }
@@ -242,8 +245,9 @@ enum PostProcessor {
                   ) else { break }
             let content = String(result[openingEnd.upperBound..<closingRange.lowerBound])
             if paragraphContentIsEmpty(content) {
+                let resumeOffset = utf8Offset(of: openingRange.lowerBound, in: result)
                 result.removeSubrange(openingRange.lowerBound..<closingRange.upperBound)
-                searchStart = result.startIndex
+                searchStart = index(in: result, atUTF8Offset: resumeOffset)
             } else {
                 searchStart = closingRange.upperBound
             }
@@ -265,5 +269,20 @@ enum PostProcessor {
     private static func removingBreakTags(from content: String) -> String {
         content.replacing(#/(?i)<br\s*/?>/#, with: "")
             .trimmed()
+    }
+
+    private static func utf8Offset(of index: String.Index, in string: String) -> Int {
+        guard let utf8Index = index.samePosition(in: string.utf8) else {
+            return 0
+        }
+        return string.utf8.distance(from: string.utf8.startIndex, to: utf8Index)
+    }
+
+    private static func index(in string: String, atUTF8Offset offset: Int) -> String.Index {
+        let utf8Index = string.utf8.index(string.utf8.startIndex, offsetBy: offset)
+        guard let index = String.Index(utf8Index, within: string) else {
+            return string.startIndex
+        }
+        return index
     }
 }
