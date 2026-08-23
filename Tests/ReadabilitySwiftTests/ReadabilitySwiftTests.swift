@@ -100,6 +100,17 @@ import Testing
     #expect(!article.textContent.contains("hidden paragraph"))
 }
 
+@Test func contentScoreCountsRustCommaScalarsWithoutCharacterIteration() throws {
+    let commaScalars = "\u{002C}\u{060C}\u{FE50}\u{FE10}\u{FE11}\u{2E41}\u{2E34}\u{2E32}\u{FF0C}"
+    let text = "Enough text for scoring: \(commaScalars) and more content."
+    let document = try DOMUtils.parse("<p>\(text)</p>")
+    let paragraph = try #require(document.select("p").first)
+
+    let score = try Scoring.calculateContentScore(paragraph, linkDensityModifier: 0)
+    let expected = 1.0 + 9.0 + min(Double(text.utf8.count) / 100.0, 3.0)
+    #expect(score == expected)
+}
+
 @Test func standardizationAndDirectMarkdownConversion() throws {
     let html = "<h2 id=\"x\"><a class=\"header-anchor\" href=\"#x\">#</a>Heading</h2><p><img data-src=\"image.jpg\" alt=\"Image\"></p>"
     let standardized = try Elements.standardizeAll(html)
